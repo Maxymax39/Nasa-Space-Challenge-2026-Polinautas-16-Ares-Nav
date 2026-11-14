@@ -1,0 +1,23 @@
+{
+  "meta": {
+    "name": "Jezero western delta - mineral detections of interest",
+    "kind": "MODELED",
+    "note": "Deposit locations and extents are simplified from published MRO/CRISM mineral mapping of the Jezero western delta (Fe/Mg phyllosilicates and carbonates on the delta, marginal carbonates near the western rim). Positions are approximate and intended for route-planning demonstration, not a PDS spectral product.",
+    "instrument": "MRO CRISM (targeted hyperspectral, 0.36-3.92 um)"
+  },
+  "classes": {
+    "phyllosilicate": { "label": "Filosilicatos Fe/Mg (arcillas)", "color": "#39ff14", "bands": "1.9 um, 2.3 um", "biosignature": "Muy alto" },
+    "carbonate": { "label": "Carbonatos", "color": "#a6ff00", "bands": "2.3 um, 2.5 um, 3.9 um", "biosignature": "Alto" },
+    "sulfate": { "label": "Sulfatos polihidratados", "color": "#c77dff", "bands": "1.9 um, 2.4 um", "biosignature": "Alto" },
+    "silica": { "label": "Sílice hidratada", "color": "#7fd8ff", "bands": "2.2 um", "biosignature": "Medio" }
+  },
+  "deposits": [
+    { "id": "three-forks-clay", "name": "Three Forks - arcillas del frente del delta", "class": "phyllosilicate", "lon": 77.4144, "lat": 18.4613, "radiusKm": 0.35, "strength": 1.0, "waypoint": true },
+    { "id": "delta-top-clay", "name": "Cima del delta - capas de arcilla", "class": "phyllosilicate", "lon": 77.3993, "lat": 18.4740, "radiusKm": 0.40, "strength": 0.85, "waypoint": true },
+    { "id": "delta-toe-carbonate", "name": "Pie del delta - carbonatos", "class": "carbonate", "lon": 77.4224, "lat": 18.4537, "radiusKm": 0.25, "strength": 0.9, "waypoint": true },
+    { "id": "marginal-carbonate", "name": "Carbonatos marginales (borde occidental)", "class": "carbonate", "lon": 77.3478, "lat": 18.4706, "radiusKm": 0.50, "strength": 0.8, "waypoint": false },
+    { "id": "sulfate-vein", "name": "Vetas de sulfato polihidratado", "class": "sulfate", "lon": 77.4064, "lat": 18.4672, "radiusKm": 0.20, "strength": 0.9, "waypoint": true },
+    { "id": "sulfate-upper", "name": "Sulfatos de la llanura superior", "class": "sulfate", "lon": 77.3869, "lat": 18.4942, "radiusKm": 0.22, "strength": 0.7, "waypoint": false },
+    { "id": "silica-outcrop", "name": "Afloramiento de sílice hidratada", "class": "silica", "lon": 77.3904, "lat": 18.4470, "radiusKm": 0.20, "strength": 0.75, "waypoint": false }
+  ]
+}
