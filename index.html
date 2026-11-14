@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ARES-NAV · Mars EVA Pathfinder</title>
+  <meta name="description" content="ARES-NAV: cartografía multicapa y navegación táctica para EVAs en el Cráter Jezero, Marte.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Orbitron:wght@600;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js" defer></script>
+  <link rel="stylesheet" href="src/styles/tailwind-custom.css">
+</head>
+<body class="bg-slate-950 text-slate-200 h-screen overflow-hidden flex flex-col">
+
+  <header class="topbar flex items-center gap-4 px-4 h-12 shrink-0">
+    <div class="flex items-baseline gap-2">
+      <span class="brand">ARES-NAV</span>
+      <span class="version">v4.8.2-NASA</span>
+    </div>
+    <span class="chip hidden md:inline-flex">JEZERO · 18.44°N 77.45°E</span>
+    <span class="chip chip-amber hidden lg:inline-flex">ENLACE TIERRA 4–24 min · NAVEGACIÓN AUTÓNOMA</span>
+    <span id="tile-status" class="chip hidden lg:inline-flex">HiRISE: conectando…</span>
+    <div class="ml-auto flex items-center gap-2">
+      <div class="seg" role="tablist" aria-label="Modo de vista">
+        <button id="view-plan" class="seg-btn active" role="tab" aria-selected="true">Hábitat · Planificación</button>
+        <button id="view-hud" class="seg-btn" role="tab" aria-selected="false">Traje · HUD</button>
+      </div>
+      <button id="mute" class="btn btn-ghost" aria-pressed="false" title="Silenciar sonido">♪ ON</button>
+    </div>
+  </header>
+
+  <main class="layout flex-1 min-h-0">
+    <aside id="left" class="panel overflow-y-auto">
+      <section class="panel-block">
+        <h2 class="panel-title">Capas GIS</h2>
+        <label class="check"><input type="checkbox" data-layer="hirise" checked><span class="swatch" style="background:#c98a5a"></span>HiRISE Optical</label>
+        <label class="check"><input type="checkbox" data-layer="topo"><span class="swatch" style="background:linear-gradient(90deg,#ffe15a,#ffaa00,#ff2255)"></span>MOLA Topo &amp; Gradient</label>
+        <label class="check"><input type="checkbox" data-layer="crism" checked><span class="swatch" style="background:#39ff14"></span>CRISM Spectral</label>
+        <label class="check"><input type="checkbox" data-layer="rad"><span class="swatch" style="background:#ff2255"></span>RAD Danger Overlay</label>
+        <div class="legend">
+          <div><i style="background:#ffe15a"></i>8–15°</div>
+          <div><i style="background:#ffaa00"></i>15–20°</div>
+          <div><i style="background:#ff2255"></i>&gt;20° bloqueado</div>
+          <div><i style="background:#39ff14"></i>Arcillas</div>
+          <div><i style="background:#a6ff00"></i>Carbonatos</div>
+          <div><i style="background:#c77dff"></i>Sulfatos</div>
+          <div><i style="background:#7fd8ff"></i>Sílice</div>
+          <div><i style="background:#ff2255"></i>&gt;0.24 mSv/h</div>
+        </div>
+      </section>
+
+      <section class="panel-block">
+        <h2 class="panel-title">Plan de EVA</h2>
+        <label class="field">Modo de travesía
+          <select id="mode">
+            <option value="foot">EVA a pie (pareja)</option>
+            <option value="rover">Con rover de apoyo</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="round-trip" checked>Retorno al hábitat</label>
+        <div class="grid grid-cols-2 gap-2 mt-2">
+          <button id="suggest" class="btn btn-cyan col-span-2">Ruta científica sugerida</button>
+          <button id="undo" class="btn">Deshacer WP</button>
+          <button id="clear" class="btn">Limpiar</button>
+          <button id="start" class="btn btn-green col-span-2">▶ Iniciar EVA</button>
+          <button id="emergency" class="btn btn-red col-span-2">⚠ Regreso de emergencia</button>
+        </div>
+        <label class="field mt-2">Velocidad de simulación
+          <select id="speed">
+            <option value="60">60×</option>
+            <option value="240" selected>240×</option>
+            <option value="900">900×</option>
+          </select>
+        </label>
+        <p class="hint">Clic en el mapa: añadir waypoint. Arrastrar: mover. Rueda: zoom. Clic en un marcador: detalles.</p>
+      </section>
+
+      <section class="panel-block">
+        <h2 class="panel-title">Marcadores de riesgo</h2>
+        <ul id="zone-list" class="zone-list"></ul>
+      </section>
+    </aside>
+
+    <section class="center min-w-0 min-h-0">
+      <div id="stage" class="stage">
+        <div id="scene" class="scene"><canvas id="map" aria-label="Mapa táctico de Jezero"></canvas></div>
+        <canvas id="hud" aria-hidden="true"></canvas>
+        <div class="scanlines"></div>
+        <div id="coords" class="coords">—</div>
+        <div id="popup" class="popup" hidden></div>
+        <div id="toast" class="toast" hidden></div>
+        <div id="hud-controls" class="hud-controls">
+          <button id="hud-start" class="btn btn-green">▶ EVA</button>
+          <button id="hud-visor" class="btn btn-cyan" aria-pressed="true">Visor 16%</button>
+          <button id="hud-emergency" class="btn btn-red">⚠ Regreso de emergencia</button>
+        </div>
+      </div>
+      <div id="profile-wrap" class="profile"><canvas id="profile" aria-label="Perfil de elevación"></canvas></div>
+    </section>
+
+    <aside id="right" class="panel overflow-y-auto"></aside>
+  </main>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

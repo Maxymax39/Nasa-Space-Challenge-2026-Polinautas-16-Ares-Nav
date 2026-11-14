@@ -1,0 +1,14 @@
+{
+  "name": "ares-nav-mars-eva",
+  "version": "4.8.2",
+  "description": "ARES-NAV: multilayer mapping and tactical EVA navigation for Jezero Crater, Mars (NASA Space Apps Challenge).",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "start": "npx --yes serve -l 5173 .",
+    "start:win": "powershell -ExecutionPolicy Bypass -File scripts/serve.ps1",
+    "generate:dem": "powershell -ExecutionPolicy Bypass -File scripts/generate-dem.ps1"
+  },
+  "keywords": ["mars", "nasa", "space-apps", "eva", "pathfinding", "jezero", "hirise"]
+}
