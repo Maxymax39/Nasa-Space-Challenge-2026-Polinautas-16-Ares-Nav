@@ -2,7 +2,6 @@
 
 ![NASA Space Apps Challenge](https://img.shields.io/badge/NASA-Space%20Apps%20Challenge%202026-0b3d91?logo=nasa&logoColor=white)
 ![Build](https://github.com/Maxymax39/ares-nav-mars-eva/actions/workflows/deploy.yml/badge.svg)
-![License: MIT](https://img.shields.io/badge/License-MIT-00f3ff.svg)
 ![Version](https://img.shields.io/badge/version-v4.8.2--NASA-ffaa00)
 
 > Cartografía multicapa y navegación táctica para actividades extravehiculares (EVA) en el Cráter Jezero, Marte.
