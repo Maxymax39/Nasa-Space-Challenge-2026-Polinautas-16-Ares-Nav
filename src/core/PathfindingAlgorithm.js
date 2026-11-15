@@ -159,7 +159,7 @@ export function lineCells(terrain, a, b) {
  * Convert a list of cells into route points with cumulative distance, time
  * and radiation dose.
  */
-export function analyzeRoute(terrain, cells, mode = 'foot') {
+export function analyzeRoute(terrain, cells, mode = 'foot', speedFactor = 1) {
   const points = [];
   let distKm = 0, hours = 0, doseMsv = 0, maxSlope = 0;
   let prev = null;
@@ -168,7 +168,7 @@ export function analyzeRoute(terrain, cells, mode = 'foot') {
     const slope = terrain.slope[idx];
     if (prev) {
       const d = terrain.distanceKm(prev, p);
-      const dt = d / traverseSpeedKmh(slope, terrain.costMul[idx], mode);
+      const dt = d / (traverseSpeedKmh(slope, terrain.costMul[idx], mode) * speedFactor);
       distKm += d;
       hours += dt;
       doseMsv += terrain.rad[idx] * dt;

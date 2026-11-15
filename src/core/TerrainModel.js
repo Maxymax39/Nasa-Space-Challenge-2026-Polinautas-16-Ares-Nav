@@ -38,6 +38,16 @@ export class Terrain {
     this.costMul = new Float32Array(this.size).fill(1);
     this.zoneId = new Uint8Array(this.size);
     this.#rasterizeHazards();
+    this.radBase = Float32Array.from(this.rad); // quiet-Sun dose rate
+    this.radFactor = 1;
+  }
+
+  /** Scale the dose-rate field for the current space weather (1 = quiet Sun). */
+  setRadiationFactor(factor) {
+    if (factor === this.radFactor) return false;
+    this.radFactor = factor;
+    for (let i = 0; i < this.size; i++) this.rad[i] = this.radBase[i] * factor;
+    return true;
   }
 
   /** Horn (1981) 3×3 slope in degrees. */
