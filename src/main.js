@@ -11,6 +11,9 @@ import {
 } from './core/BioSafetyCalculators.js';
 import { unlockAudio, setMuted, sfx } from './core/AudioFeedback.js';
 import { t, tr, applyI18n, getLang, setLang, onLangChange } from './core/i18n.js';
+import {
+  loadEnvironmentReference, deriveEnvironment, radiationFactor, formatHour,
+} from './core/EnvironmentModel.js';
 import { MapEngine } from './components/MapEngine.js';
 import { SuitHudOverlay } from './components/SuitHudOverlay.js';
 import { TelemetryPanel } from './components/TelemetryPanel.js';
@@ -35,9 +38,12 @@ const state = {
   },
   nav: null,
   alert: { level: 'none' },
+  // environment controls (filled from the "nominal" preset at boot) and derived conditions
+  env: { preset: 'nominal', tau: 0.4, windSpeed: 5, windDir: 300, startHour: 9, spaceWeather: 'quiet' },
+  envNow: null,
 };
 
-let terrain, map, hud, panel, profile;
+let terrain, envRef, map, hud, panel, profile;
 
 /* ---------- small UI helpers ---------- */
 
@@ -106,14 +112,15 @@ function recompute(playSound = true) {
       };
       if (playSound) sfx.blocked();
     } else {
-      const analysis = analyzeRoute(terrain, plan.cells, state.mode);
+      const speedFactor = planSpeedFactor();
+      const analysis = analyzeRoute(terrain, plan.cells, state.mode, speedFactor);
       const summary = evaSummary(analysis);
       const notes = [];
       if (summary.o2DepletionPct >= 100) notes.push({ key: 'note.o2' });
       if (summary.exceedsEvaWindow) notes.push({ key: 'note.window', vars: { h: SUIT.evaHours[1] } });
       if (!notes.length) notes.push({ key: 'note.clear' });
       state.route = {
-        ...analysis, summary, kind: 'plan', notes,
+        ...analysis, summary, kind: 'plan', notes, speedFactor,
         wpMarks: waypointMarks(analysis.points, plan.wpCells, labels),
       };
       if (playSound) sfx.route();
@@ -181,12 +188,14 @@ function triggerEmergency() {
     sfx.blocked();
     return;
   }
-  const analysis = analyzeRoute(terrain, [...traveled, ...ret.cells], state.mode);
+  const speedFactor = planSpeedFactor();
+  const analysis = analyzeRoute(terrain, [...traveled, ...ret.cells], state.mode, speedFactor);
   const startIndex = traveled.length;
   state.route = {
     ...analysis,
     summary: evaSummary(analysis),
     kind: 'emergency',
+    speedFactor,
     emergencyIndex: Math.max(0, startIndex - 1),
     notes: [{ key: ret.direct ? 'note.direct' : 'note.detour' }],
     wpMarks: [{ label: 'HAB', index: analysis.points.length - 1, distKm: analysis.distanceKm }],
@@ -226,20 +235,23 @@ const angleLerp = (a, b, k) => (a + ((((b - a) % 360) + 540) % 360 - 180) * k + 
 
 /** Advance the simulation and refresh telemetry, navigation and alerts. */
 function updateSim(dtSec) {
-  const { sim: s, telemetry: t, route } = state;
+  // `tm` (not `t`): `t` is the translation function in this module
+  const { sim: s, telemetry: tm, route } = state;
   if (!route) {
-    Object.assign(t, { o2Pct: 100, hr: 72, ppCo2: 3.5, hydrationL: 0, doseMsv: 0, distKm: 0, hours: 0, score: 100 });
+    Object.assign(tm, { o2Pct: 100, hr: 72, ppCo2: 3.5, hydrationL: 0, doseMsv: 0, distKm: 0, hours: 0, score: 100 });
     const here = terrain.sample(s.pos.lon, s.pos.lat);
-    Object.assign(t, { slope: here.slope, elev: here.elev, radRate: here.rad });
+    Object.assign(tm, { slope: here.slope, elev: here.elev, radRate: here.rad });
     state.nav = null;
-    setAlert({ level: 'none' });
+    state.envNow = deriveEnvironment(envRef, state.env, 0, s.heading);
+    setAlert(environmentAlert(state.envNow) ?? { level: 'none' });
     return;
   }
   const pts = route.points;
 
   if (s.running) {
     const cur = pts[s.index];
-    s.km += (traverseSpeedKmh(cur.slope, cur.costMul, state.mode) * dtSec * s.speedX) / 3600;
+    // same environment speed factor the plan was analysed with, so time and dose stay consistent
+    s.km += (traverseSpeedKmh(cur.slope, cur.costMul, state.mode) * route.speedFactor * dtSec * s.speedX) / 3600;
     if (s.km >= route.distanceKm) {
       s.km = route.distanceKm;
       s.running = false;
@@ -260,18 +272,21 @@ function updateSim(dtSec) {
 
   const o2Dep = s.km > 0 ? suitO2Depletion(s.km, a.maxSlopeSoFar) : 0;
   const hrTarget = heartRateBpm(a.slope, a.costMul, s.running);
-  t.hr = Math.round(t.hr + (hrTarget - t.hr) * Math.min(1, dtSec * 1.5 + (dtSec ? 0 : 1)));
-  t.o2Pct = 100 - o2Dep;
-  t.pressurePsid = SUIT.pressurePsid + 0.015 * Math.sin(performance.now() / 1700);
-  t.ppCo2 = 3.5 + Math.max(0, t.hr - 72) * 0.045;
-  t.hours = mix('hours');
-  t.hydrationL = evaHydrationL(t.hours);
-  t.doseMsv = mix('doseMsv');
-  t.radRate = a.rad;
-  t.slope = a.slope;
-  t.elev = mix('elev');
-  t.distKm = s.km;
-  t.score = evaSafetyScore({ maxSlopeDeg: a.maxSlopeSoFar, radiationMsv: t.doseMsv, o2DepletionPct: o2Dep });
+  tm.hr = Math.round(tm.hr + (hrTarget - tm.hr) * Math.min(1, dtSec * 1.5 + (dtSec ? 0 : 1)));
+  tm.o2Pct = 100 - o2Dep;
+  tm.pressurePsid = SUIT.pressurePsid + 0.015 * Math.sin(performance.now() / 1700);
+  tm.ppCo2 = 3.5 + Math.max(0, tm.hr - 72) * 0.045;
+  tm.hours = mix('hours');
+  tm.hydrationL = evaHydrationL(tm.hours);
+  tm.doseMsv = mix('doseMsv');
+  tm.radRate = a.rad;
+  tm.slope = a.slope;
+  tm.elev = mix('elev');
+  tm.distKm = s.km;
+  tm.score = evaSafetyScore({ maxSlopeDeg: a.maxSlopeSoFar, radiationMsv: tm.doseMsv, o2DepletionPct: o2Dep });
+
+  // conditions at the current local time and heading
+  state.envNow = deriveEnvironment(envRef, state.env, tm.hours, s.heading);
 
   // next waypoint vector
   const mark = route.wpMarks.find((m) => m.distKm > s.km + 1e-6) ?? route.wpMarks[route.wpMarks.length - 1];
@@ -280,10 +295,72 @@ function updateSim(dtSec) {
     label: mark.label,
     bearing: terrain.bearingDeg(s.pos, target),
     distKm: terrain.distanceKm(s.pos, target),
-    etaMin: Math.max(0, (target.hours - t.hours) * 60),
+    etaMin: Math.max(0, (target.hours - tm.hours) * 60),
   };
 
-  setAlert(s.km > 0 && s.km < route.distanceKm ? evaluateAlert(a, pts) : { level: 'none' });
+  // terrain danger first, then a NO-GO environment, then terrain cautions
+  const terrainAlert = s.km > 0 && s.km < route.distanceKm ? evaluateAlert(a, pts) : { level: 'none' };
+  setAlert(terrainAlert.level === 'danger' ? terrainAlert : environmentAlert(state.envNow) ?? terrainAlert);
+}
+
+/** HUD alert for a NO-GO environment (storm, particle event, extreme wind), or null. */
+function environmentAlert(v) {
+  const reason = v.status.reasons.find((r) => r.level === 'nogo');
+  if (!reason) return null;
+  const kinds = {
+    'env.reason.spe': ['env.alert.spe', `×${v.radFactor.toFixed(1)}`],
+    'env.reason.storm': ['env.alert.storm', `τ ${v.tau.toFixed(1)} · VIS ${v.visibilityKm.toFixed(0)} km`],
+    'env.reason.windNoGo': ['env.alert.wind', `${v.windSpeed.toFixed(0)} m/s`],
+  };
+  const [title, detail] = kinds[reason.key];
+  return { level: 'danger', title: t(title), detail: t('env.alert.detail', { detail }) };
+}
+
+/* ---------- environment ---------- */
+
+/** Travel-speed factor used for planning: conditions at departure. */
+const planSpeedFactor = () => deriveEnvironment(envRef, state.env, 0, 0).speedFactor;
+
+/** Re-time the current route in place (same path) after the environment changes mid-EVA. */
+function reanalyzeRoute() {
+  const route = state.route;
+  const speedFactor = planSpeedFactor();
+  const analysis = analyzeRoute(terrain, route.points.map((p) => p.cell), state.mode, speedFactor);
+  Object.assign(route, analysis, { summary: evaSummary(analysis), speedFactor });
+  for (const m of route.wpMarks) m.distKm = analysis.points[m.index].distKm;
+  panel.updateRoute();
+}
+
+function syncEnvControls() {
+  const e = state.env;
+  $('env-preset').value = e.preset;
+  $('env-tau').value = e.tau;
+  $('env-wind').value = e.windSpeed;
+  $('env-dir').value = e.windDir;
+  $('env-hour').value = e.startHour;
+  $('env-sw').value = e.spaceWeather;
+  $('env-tau-val').textContent = e.tau.toFixed(1);
+  $('env-wind-val').textContent = `${e.windSpeed} m/s`;
+  $('env-dir-val').textContent = `${String(e.windDir).padStart(3, '0')}°`;
+  $('env-hour-val').textContent = formatHour(e.startHour);
+}
+
+/** Push the environment controls into the radiation field, the route and the views. */
+function applyEnvironment() {
+  syncEnvControls();
+  const radChanged = terrain.setRadiationFactor(radiationFactor(envRef, state.env.spaceWeather));
+  if (radChanged) map.refreshRasters();
+  if (state.route && state.sim.km > 0) {
+    reanalyzeRoute(); // EVA under way: keep the path, the alerts tell the crew to turn back
+  } else {
+    recompute(false);
+    if (radChanged && state.waypoints.length) toast(t('env.toast.rad'));
+  }
+}
+
+function setPreset(name) {
+  Object.assign(state.env, envRef.presets[name], { preset: name });
+  applyEnvironment();
 }
 
 /** Hazard proximity logic for the HUD alert box. */
@@ -376,7 +453,7 @@ function showMarker(marker, at) {
   } else if (marker.type === 'rad') {
     openPopup(`
       <h3 style="color:#ff2255">☢ ${tr(d, 'name')}</h3>
-      <p>${t('popup.radBody', { peak: d.peakMsvPerHour.toFixed(2), max: LIMITS.maxRadMsvPerHour })}</p>`, at);
+      <p>${t('popup.radBody', { peak: (d.peakMsvPerHour * terrain.radFactor).toFixed(2), max: LIMITS.maxRadMsvPerHour })}</p>`, at);
   } else {
     openPopup(`
       <h3>Octavia E. Butler Landing</h3>
@@ -389,8 +466,10 @@ function showMarker(marker, at) {
 /* ---------- boot ---------- */
 
 async function boot() {
-  terrain = await loadTerrain();
+  [terrain, envRef] = await Promise.all([loadTerrain(), loadEnvironmentReference()]);
   state.sim.pos = { ...terrain.habitat };
+  Object.assign(state.env, envRef.presets.nominal);
+  state.envNow = deriveEnvironment(envRef, state.env, 0, 0);
 
   map = new MapEngine($('map'), terrain, state, {
     onMapClick: (p) => { closePopup(); if (state.view === 'plan') addWaypoint(p); },
@@ -465,6 +544,27 @@ async function boot() {
     e.currentTarget.setAttribute('aria-pressed', String(muted));
     e.currentTarget.textContent = muted ? '♪ OFF' : '♪ ON';
   });
+  // environment controls: a preset fills every control; touching one switches to "custom"
+  $('env-preset').addEventListener('change', (e) => {
+    if (e.target.value === 'custom') { state.env.preset = 'custom'; return; }
+    setPreset(e.target.value);
+    sfx.toggle();
+  });
+  const envInputs = { 'env-tau': 'tau', 'env-wind': 'windSpeed', 'env-dir': 'windDir', 'env-hour': 'startHour' };
+  for (const [id, key] of Object.entries(envInputs)) {
+    $(id).addEventListener('input', (e) => {
+      state.env[key] = Number(e.target.value);
+      state.env.preset = 'custom';
+      applyEnvironment();
+    });
+  }
+  $('env-sw').addEventListener('change', (e) => {
+    state.env.spaceWeather = e.target.value;
+    state.env.preset = 'custom';
+    applyEnvironment();
+    sfx.toggle();
+  });
+
   window.addEventListener('pointerdown', unlockAudio, { once: true });
   window.addEventListener('keydown', (e) => {
     if (e.target.matches('input, select')) return;
@@ -474,7 +574,7 @@ async function boot() {
   new ResizeObserver(resizeAll).observe($('stage'));
   new ResizeObserver(resizeAll).observe($('profile-wrap'));
 
-  recompute(false);
+  applyEnvironment(); // also plans the (empty) initial route
 
   // 60 FPS render loop
   let last = performance.now(), lastUi = 0;
@@ -487,6 +587,7 @@ async function boot() {
     if (now - lastUi > 120) {
       lastUi = now;
       panel.updateLive();
+      panel.updateEnvironment();
       profile.draw();
       const chip = $('tile-status');
       // drives the chip through data-i18n so a language switch updates it too
