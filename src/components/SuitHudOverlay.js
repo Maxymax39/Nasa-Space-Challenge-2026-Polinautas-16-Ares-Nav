@@ -9,7 +9,7 @@ import { formatHour } from '../core/EnvironmentModel.js';
 // imported as L: several methods use `t` for telemetry or terrain
 import { t as L } from '../core/i18n.js';
 
-const C = { cyan: '#00f3ff', amber: '#ffaa00', red: '#ff2255', green: '#39ff14', dim: 'rgba(0,243,255,0.45)' };
+const C = { cyan: '#6fb6d9', amber: '#e2a13a', red: '#e5534b', green: '#5fb878', dim: 'rgba(111, 182, 217,0.45)' };
 const FONT = '"JetBrains Mono", ui-monospace, monospace';
 /** Cardinal letter for a heading that is a multiple of 45°, in the current language. */
 const cardinal = (deg) => (deg % 45 === 0 ? L('hud.cardinals').split(',')[deg / 45] : undefined);
@@ -49,8 +49,8 @@ export class SuitHudOverlay {
     if (!w) return;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    ctx.shadowColor = C.cyan;
-    ctx.shadowBlur = 6;
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+    ctx.shadowBlur = 3;
 
     this.#visorFrame();
     this.#compass(state.sim.heading, state.nav, state.envNow);
@@ -60,6 +60,7 @@ export class SuitHudOverlay {
     this.#navColumn(state.telemetry, state.nav);
     this.#radar(now);
     this.#footer(state);
+    this.#badges(state);
     this.#alert(state.alert, now);
     ctx.shadowBlur = 0;
   }
@@ -70,10 +71,18 @@ export class SuitHudOverlay {
     ctx.save();
     ctx.shadowBlur = 0;
     const g = ctx.createRadialGradient(w / 2, h * 0.52, Math.min(w, h) * 0.42, w / 2, h * 0.52, Math.max(w, h) * 0.72);
-    g.addColorStop(0, 'rgba(2,6,23,0)');
-    g.addColorStop(1, 'rgba(2,6,23,0.96)');
+    g.addColorStop(0, 'rgba(17,19,21,0)');
+    g.addColorStop(1, 'rgba(17,19,21,0.96)');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, w, h);
+    // darker bands behind the two readout columns so they hold up over bright ground
+    for (const [x0, x1] of [[0, w * 0.3], [w, w * 0.7]]) {
+      const side = ctx.createLinearGradient(x0, 0, x1, 0);
+      side.addColorStop(0, 'rgba(17,19,21,0.7)');
+      side.addColorStop(1, 'rgba(17,19,21,0)');
+      ctx.fillStyle = side;
+      ctx.fillRect(Math.min(x0, x1), 0, Math.abs(x1 - x0), h);
+    }
     ctx.restore();
 
     ctx.strokeStyle = C.dim;
@@ -126,7 +135,7 @@ export class SuitHudOverlay {
 
     // heading box
     const hdg = String(Math.round(heading) % 360).padStart(3, '0');
-    ctx.fillStyle = 'rgba(2,6,23,0.9)';
+    ctx.fillStyle = 'rgba(17,19,21,0.9)';
     ctx.strokeStyle = C.cyan;
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -146,7 +155,7 @@ export class SuitHudOverlay {
       const x = cx + Math.max(-45, Math.min(45, rel)) * pxPerDeg;
       ctx.save();
       ctx.fillStyle = C.amber;
-      ctx.shadowColor = C.amber;
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
       ctx.globalAlpha = Math.abs(rel) > 45 ? 0.45 : 1;
       ctx.beginPath();
       ctx.moveTo(x, y - 20);
@@ -163,7 +172,7 @@ export class SuitHudOverlay {
       const clamped = Math.max(-45, Math.min(45, rel));
       const x = cx + clamped * pxPerDeg;
       ctx.fillStyle = C.green;
-      ctx.shadowColor = C.green;
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
       ctx.beginPath();
       ctx.moveTo(x, y + 20);
       ctx.lineTo(x - 7, y + 32);
@@ -171,7 +180,7 @@ export class SuitHudOverlay {
       ctx.closePath();
       ctx.fill();
       if (Math.abs(rel) > 45) this.#text(rel > 0 ? '▶' : '◀', x + (rel > 0 ? 14 : -14), y + 26, { color: C.green, align: 'center' });
-      ctx.shadowColor = C.cyan;
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
     }
   }
 
@@ -206,7 +215,7 @@ export class SuitHudOverlay {
     ctx.translate(cx, cy);
     ctx.rotate(rel);
     ctx.fillStyle = C.green;
-    ctx.shadowColor = C.green;
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
     ctx.beginPath();
     ctx.moveTo(0, -78);
     ctx.lineTo(9, -58);
@@ -266,7 +275,7 @@ export class SuitHudOverlay {
     };
 
     ctx.save();
-    ctx.fillStyle = 'rgba(2,6,23,0.72)';
+    ctx.fillStyle = 'rgba(17,19,21,0.72)';
     ctx.strokeStyle = C.cyan;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -276,7 +285,7 @@ export class SuitHudOverlay {
     ctx.clip();
     ctx.shadowBlur = 0;
 
-    ctx.strokeStyle = 'rgba(0,243,255,0.2)';
+    ctx.strokeStyle = 'rgba(111, 182, 217,0.2)';
     ctx.beginPath();
     ctx.arc(cx, cy, R / 2, 0, Math.PI * 2);
     ctx.moveTo(cx - R, cy);
@@ -287,7 +296,7 @@ export class SuitHudOverlay {
 
     // sweep
     const sweep = (now / 1400) % (Math.PI * 2);
-    ctx.strokeStyle = 'rgba(0,243,255,0.5)';
+    ctx.strokeStyle = 'rgba(111, 182, 217,0.5)';
     ctx.beginPath();
     ctx.moveTo(cx, cy);
     ctx.lineTo(cx + Math.cos(sweep) * R, cy + Math.sin(sweep) * R);
@@ -344,6 +353,39 @@ export class SuitHudOverlay {
     this.#text(L('hud.link'), x, h - 38, { align: 'right', size: 10, weight: 500 });
   }
 
+  /** Tags pinned to the astronaut and the rover in the 3D scene: who is who, and how they are doing. */
+  #badges(state) {
+    const at = this.view3d?.labels;
+    if (!at) return;
+    const { ctx } = this;
+    const tag = (pos, text, color) => {
+      if (!pos) return;
+      ctx.font = `600 11px ${FONT}`;
+      const tw = ctx.measureText(text).width;
+      const x = pos.x - tw / 2 - 6, y = pos.y - 20;
+      ctx.save();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = 'rgba(17,19,21,0.85)';
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.rect(x, y, tw + 12, 18);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+      this.#text(text, pos.x, y + 9, { size: 11, color, align: 'center' });
+    };
+    const tm = state.telemetry;
+    const vitals = tm.o2Pct < 25 || tm.hr >= 170 ? C.red : tm.o2Pct < 50 || tm.hr >= 150 ? C.amber : C.green;
+    tag(at.astronaut, L('map.ev', { o2: tm.o2Pct.toFixed(0), hr: tm.hr }), vitals);
+    const rv = state.rover;
+    if (rv) {
+      tag(at.rover, L('map.rover', {
+        bat: rv.batteryPct.toFixed(0), cargo: rv.cargoKg, max: rv.cargoMaxKg, com: L(`rover.com.${rv.comms}`),
+      }), rv.batteryPct < 20 || rv.comms !== 'ok' ? C.red : C.amber);
+    }
+  }
+
   /** Alert box: flashing red for danger, steady amber for caution. */
   #alert(alert, now) {
     if (!alert || alert.level === 'none') return;
@@ -351,11 +393,15 @@ export class SuitHudOverlay {
     const danger = alert.level === 'danger';
     const on = !danger || Math.floor(now / 280) % 2 === 0;
     const color = danger ? C.red : C.amber;
-    const bw = Math.min(520, w * 0.5), bh = 64, x = (w - bw) / 2, y = h * 0.68;
+    // long titles (the RTB message) get a smaller face and a wider box
+    const size = alert.title.length > 34 ? 13 : 17;
+    ctx.font = `800 ${size}px ${FONT}`;
+    const bw = Math.min(w - 40, Math.max(Math.min(520, w * 0.5), ctx.measureText(`⚠ ${alert.title}`).width + 36));
+    const bh = 64, x = (w - bw) / 2, y = h * 0.68;
     ctx.save();
-    ctx.shadowColor = color;
-    ctx.shadowBlur = on ? 22 : 0;
-    ctx.fillStyle = on && danger ? 'rgba(255,34,85,0.28)' : 'rgba(2,6,23,0.85)';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+    ctx.shadowBlur = on ? 3 : 0;
+    ctx.fillStyle = on && danger ? 'rgba(229, 83, 75,0.28)' : 'rgba(17,19,21,0.85)';
     ctx.strokeStyle = color;
     ctx.globalAlpha = on ? 1 : 0.35;
     ctx.lineWidth = 3;
@@ -363,7 +409,7 @@ export class SuitHudOverlay {
     ctx.rect(x, y, bw, bh);
     ctx.fill();
     ctx.stroke();
-    this.#text(`⚠ ${alert.title}`, w / 2, y + 22, { align: 'center', size: 17, color, weight: 800 });
+    this.#text(`⚠ ${alert.title}`, w / 2, y + 22, { align: 'center', size, color, weight: 800 });
     this.#text(alert.detail, w / 2, y + 45, { align: 'center', size: 12, color: '#ffffff', weight: 500 });
     ctx.restore();
   }

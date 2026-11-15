@@ -13,7 +13,7 @@ const TILE_BASE =
 const TILE_COVERAGE = { west: 77.2229331, east: 77.583964, south: 18.3067994, north: 18.669315 };
 const MAX_TILE_ZOOM = 18;
 
-const COLORS = { cyan: '#00f3ff', amber: '#ffaa00', red: '#ff2255', green: '#39ff14' };
+const COLORS = { cyan: '#6fb6d9', amber: '#e2a13a', red: '#e5534b', green: '#5fb878' };
 const ZONE_GLYPH = { slope: '⛰', loose: '≋', sand: '∿', boulders: '◆', unstable: '⚠' };
 
 const hexToRgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
@@ -33,6 +33,10 @@ export class MapEngine {
     this.handlers = handlers;
     this.tiles = new Map();
     this.tilesOnline = false;
+    this.tilesReady = 0; // bumped per loaded tile so the 3D view knows when to re-drape
+    this.tileBudget = 120;
+    this.zoomCap = MAX_TILE_ZOOM;
+    this.flat = false; // true while rendering the terrain texture
     this.rotation = 0; // radians, heading-up in HUD follow mode
     this.follow = false;
     this.center = {
@@ -137,8 +141,8 @@ export class MapEngine {
 
     const topo = make((i) => {
       const s = t.slope[i];
-      if (s > 20) return [255, 34, 85, 200];
-      if (s > 15) return [255, 170, 0, 170];
+      if (s > 20) return [229, 83, 75, 200];
+      if (s > 15) return [226, 161, 58, 170];
       if (s > 8) return [255, 225, 90, 95];
       const k = (t.elev[i] - t.minElev) / span;
       return [40 + 180 * k, 160 + 60 * k, 220 - 120 * k, 60];
@@ -160,12 +164,69 @@ export class MapEngine {
     const { baselineMsvPerHour: base, limitMsvPerHour: limit } = t.hazards.radiation;
     const rad = make((i) => {
       const v = t.rad[i];
-      if (v > limit) return [255, 34, 85, 175];
+      if (v > limit) return [229, 83, 75, 175];
       const k = (v - base) / (limit - base);
       return k > 0.1 ? [200 + 55 * k, 60, 255 - 170 * k, 30 + 110 * k] : [0, 0, 0, 0];
     });
 
-    return { relief, topo, crism, rad };
+    return { relief, topo, crism, rad, contours: this.rasters?.contours ?? this.#buildContours() };
+  }
+
+  /**
+   * Contour lines every 10 m, heavier every 50 m. Drawn at 4x the grid
+   * resolution from interpolated elevation so the lines are not stair-stepped.
+   */
+  #buildContours() {
+    const t = this.terrain, k = 4, b = t.bounds;
+    const w = t.ncols * k, h = t.nrows * k;
+    const level = new Int16Array(w * h);
+    for (let y = 0; y < h; y++) {
+      const lat = b.north - ((y + 0.5) / h) * (b.north - b.south);
+      for (let x = 0; x < w; x++) {
+        level[y * w + x] = Math.floor(t.elevAt(b.west + ((x + 0.5) / w) * (b.east - b.west), lat) / 10);
+      }
+    }
+    const cv = document.createElement('canvas');
+    cv.width = w;
+    cv.height = h;
+    const c = cv.getContext('2d');
+    const img = c.createImageData(w, h);
+    for (let y = 0; y < h - 1; y++) {
+      for (let x = 0; x < w - 1; x++) {
+        const i = y * w + x, a = level[i];
+        const other = level[i + 1] !== a ? level[i + 1] : level[i + w] !== a ? level[i + w] : a;
+        if (other === a) continue;
+        const index = Math.max(a, other) % 5 === 0;
+        img.data.set([235, 238, 240, index ? 210 : 110], i * 4);
+      }
+    }
+    c.putImageData(img, 0, 0);
+    return cv;
+  }
+
+  /**
+   * Draw the whole mapped area north-up into another canvas, with every
+   * active layer, the route and the markers but no labels or screen widgets.
+   * The 3D view drapes this over the terrain mesh.
+   */
+  renderFlat(canvas, scale) {
+    const t = this.terrain, b = t.bounds;
+    const keep = {
+      ctx: this.ctx, w: this.w, h: this.h, dpr: this.dpr, center: this.center,
+      pxPerKm: this.pxPerKm, rotation: this.rotation, follow: this.follow,
+    };
+    const w = canvas.width / scale;
+    Object.assign(this, {
+      ctx: canvas.getContext('2d'), w, h: canvas.height / scale, dpr: scale,
+      center: { lon: (b.west + b.east) / 2, lat: (b.north + b.south) / 2 },
+      pxPerKm: w / ((b.east - b.west) * t.kmPerDegLon),
+      rotation: 0, follow: false, flat: true, zoomCap: 14, tileBudget: 240,
+    });
+    try {
+      this.draw(0);
+    } finally {
+      Object.assign(this, keep, { flat: false, zoomCap: MAX_TILE_ZOOM, tileBudget: 120 });
+    }
   }
 
   /** Rebuild the layer rasters, e.g. after space weather rescales the radiation field. */
@@ -182,7 +243,7 @@ export class MapEngine {
       const img = new Image();
       img.crossOrigin = 'anonymous';
       t = { img, ready: false, failed: false };
-      img.onload = () => { t.ready = true; this.tilesOnline = true; };
+      img.onload = () => { t.ready = true; this.tilesOnline = true; this.tilesReady++; };
       img.onerror = () => { t.failed = true; };
       img.src = `${TILE_BASE}/${key}.png`;
       this.tiles.set(key, t);
@@ -194,7 +255,7 @@ export class MapEngine {
     const t = this.terrain;
     const degPerPx = 1 / (t.kmPerDegLon * this.pxPerKm * this.dpr);
     const ideal = Math.ceil(Math.log2(180 / (256 * degPerPx)));
-    const zTop = Math.max(8, Math.min(MAX_TILE_ZOOM, ideal));
+    const zTop = Math.max(8, Math.min(this.zoomCap, ideal));
     const west = Math.max(viewBox.west, TILE_COVERAGE.west), east = Math.min(viewBox.east, TILE_COVERAGE.east);
     const south = Math.max(viewBox.south, TILE_COVERAGE.south), north = Math.min(viewBox.north, TILE_COVERAGE.north);
     if (west >= east || south >= north) return;
@@ -204,7 +265,7 @@ export class MapEngine {
       const deg = 180 / 2 ** z;
       const x0 = Math.floor((west + 180) / deg), x1 = Math.floor((east + 180) / deg);
       const y0 = Math.floor((90 - north) / deg), y1 = Math.floor((90 - south) / deg);
-      if ((x1 - x0 + 1) * (y1 - y0 + 1) > 120) continue;
+      if ((x1 - x0 + 1) * (y1 - y0 + 1) > this.tileBudget) continue;
       for (let y = y0; y <= y1; y++) {
         for (let x = x0; x <= x1; x++) {
           const tile = this.#tile(z, x, y);
@@ -300,7 +361,7 @@ export class MapEngine {
     }
 
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    ctx.fillStyle = '#020617';
+    ctx.fillStyle = '#0c0d0e';
     ctx.fillRect(0, 0, this.w, this.h);
 
     // world-aligned rasters, drawn inside a rotated context
@@ -329,18 +390,21 @@ export class MapEngine {
     if (state.layers.topo) blit(this.rasters.topo);
     if (state.layers.crism) blit(this.rasters.crism, 0.75 + 0.15 * Math.sin(now / 600));
     if (state.layers.rad) blit(this.rasters.rad);
-    ctx.strokeStyle = 'rgba(0,243,255,0.35)';
+    if (state.layers.contours) blit(this.rasters.contours);
+    ctx.strokeStyle = 'rgba(111, 182, 217,0.35)';
     ctx.lineWidth = 1;
     ctx.strokeRect(nw.x, nw.y, se.x - nw.x, se.y - nw.y);
     ctx.restore();
 
-    this.#drawWeather(now);
+    if (!this.flat) this.#drawWeather(now);
     this.#drawZones(now);
     if (state.layers.crism) this.#drawMinerals();
-    if (state.layers.rad) this.#drawRadLabels();
+    if (state.layers.rad && !this.flat) this.#drawRadLabels();
     this.#drawRoute(now);
     this.#drawHabitat(now);
     this.#drawWaypoints();
+    if (this.flat) return; // the 3D view draws its own astronaut and has no use for the scale bar
+    this.#drawRover();
     this.#drawAstronaut(now);
     if (!this.follow) {
       this.#drawScaleBar();
@@ -400,7 +464,7 @@ export class MapEngine {
     const cx = this.w - 34, cy = 34, r = 18;
     const color = env.windSpeed >= 25 ? COLORS.red : env.windSpeed >= 15 ? COLORS.amber : COLORS.cyan;
     ctx.save();
-    ctx.fillStyle = 'rgba(2,6,23,0.78)';
+    ctx.fillStyle = 'rgba(17,19,21,0.78)';
     ctx.strokeStyle = color;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -431,7 +495,7 @@ export class MapEngine {
     ctx.textBaseline = 'middle';
     const w = ctx.measureText(text).width;
     const bx = align === 'center' ? x - w / 2 - 4 : align === 'right' ? x - w - 4 : x - 4;
-    ctx.fillStyle = 'rgba(2,6,23,0.78)';
+    ctx.fillStyle = 'rgba(17,19,21,0.78)';
     ctx.fillRect(bx, y - 8, w + 8, 16);
     ctx.fillStyle = color;
     ctx.fillText(text, x, y);
@@ -463,7 +527,7 @@ export class MapEngine {
       ctx.lineTo(s.x + 11, s.y + 8);
       ctx.lineTo(s.x - 11, s.y + 8);
       ctx.closePath();
-      ctx.fillStyle = 'rgba(2,6,23,0.9)';
+      ctx.fillStyle = 'rgba(17,19,21,0.9)';
       ctx.fill();
       ctx.strokeStyle = color;
       ctx.lineWidth = 2;
@@ -473,7 +537,7 @@ export class MapEngine {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(String(z.id), s.x, s.y + 2);
-      if (!this.follow && this.pxPerKm > 60) this.#label(`${ZONE_GLYPH[z.type]} Z${z.id} ${tr(z, 'name')}`, s.x + 16, s.y, color);
+      if (!this.follow && !this.flat && this.pxPerKm > 60) this.#label(`${ZONE_GLYPH[z.type]} Z${z.id} ${tr(z, 'name')}`, s.x + 16, s.y, color);
     }
   }
 
@@ -486,15 +550,15 @@ export class MapEngine {
       ctx.save();
       ctx.translate(s.x, s.y);
       ctx.rotate(Math.PI / 4);
-      ctx.fillStyle = 'rgba(2,6,23,0.85)';
+      ctx.fillStyle = 'rgba(17,19,21,0.85)';
       ctx.strokeStyle = color;
       ctx.lineWidth = 2;
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 8;
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+      ctx.shadowBlur = 3;
       ctx.fillRect(-5, -5, 10, 10);
       ctx.strokeRect(-5, -5, 10, 10);
       ctx.restore();
-      if (!this.follow && d.waypoint && this.pxPerKm > 90) this.#label(tr(d, 'name').split(' - ')[0], s.x + 11, s.y - 12, color);
+      if (!this.follow && !this.flat && d.waypoint && this.pxPerKm > 90) this.#label(tr(d, 'name').split(' - ')[0], s.x + 11, s.y - 12, color);
     }
   }
 
@@ -519,12 +583,12 @@ export class MapEngine {
       for (let i = from + 1; i <= to; i++) ctx.lineTo(pts[i].x, pts[i].y);
       ctx.lineJoin = 'round';
       ctx.lineCap = 'round';
-      ctx.strokeStyle = 'rgba(2,6,23,0.8)';
+      ctx.strokeStyle = 'rgba(17,19,21,0.8)';
       ctx.lineWidth = 6;
       ctx.stroke();
       ctx.strokeStyle = color;
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 10;
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+      ctx.shadowBlur = 3;
       ctx.lineWidth = 2.5;
       if (dash) { ctx.setLineDash(dash); ctx.lineDashOffset = -now / 30; }
       ctx.stroke();
@@ -532,6 +596,68 @@ export class MapEngine {
     };
     stroke(0, Math.min(split, pts.length - 1), COLORS.green, null);
     if (split < pts.length - 1) stroke(split, pts.length - 1, COLORS.red, [10, 7]);
+
+    // trail: the part already walked, drawn as a thin white line on top
+    const sim = state.sim;
+    if (!this.flat && sim.km > 0 && sim.pos) {
+      const here = this.toScreen(sim.pos.lon, sim.pos.lat);
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i <= Math.min(sim.index, pts.length - 1); i++) ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.lineTo(here.x, here.y);
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = 1.25;
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  /**
+   * Support rover: a vehicle outline (body, four wheels, mast) so it cannot be
+   * mistaken for the astronaut's arrowhead, joined to the crew by a dashed
+   * tether line. The label carries battery, cargo and relay status.
+   */
+  #drawRover() {
+    const { ctx, state } = this;
+    const rv = state.rover;
+    if (!rv || !state.sim.pos) return;
+    const s = this.toScreen(rv.pos.lon, rv.pos.lat);
+    const crew = this.toScreen(state.sim.pos.lon, state.sim.pos.lat);
+    const color = rv.batteryPct < 20 ? COLORS.red : COLORS.amber;
+
+    ctx.save();
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = rv.comms === 'ok' ? COLORS.amber : COLORS.red;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(s.x, s.y);
+    ctx.lineTo(crew.x, crew.y);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(s.x, s.y);
+    ctx.rotate((rv.heading * Math.PI) / 180 - this.rotation);
+    ctx.fillStyle = color;
+    for (const [wx, wy] of [[-9, -8], [6, -8], [-9, 5], [6, 5]]) ctx.fillRect(wx, wy, 3, 4); // wheels
+    ctx.fillStyle = 'rgba(17,19,21,0.92)';
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.rect(-6, -9, 12, 18);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.fillRect(-3, -9, 6, 4); // front (sensor mast end)
+    ctx.restore();
+
+    if (!this.follow) {
+      this.#label(L('map.rover', {
+        bat: rv.batteryPct.toFixed(0), cargo: rv.cargoKg, max: rv.cargoMaxKg, com: L(`rover.com.${rv.comms}`),
+      }), s.x + 16, s.y + 16, color);
+    }
   }
 
   #drawHabitat(now) {
@@ -546,9 +672,9 @@ export class MapEngine {
     ctx.arc(s.x, s.y, pulse + 6, 0, Math.PI * 2);
     ctx.stroke();
     ctx.globalAlpha = 1;
-    ctx.fillStyle = 'rgba(2,6,23,0.9)';
-    ctx.shadowColor = COLORS.cyan;
-    ctx.shadowBlur = 12;
+    ctx.fillStyle = 'rgba(17,19,21,0.9)';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+    ctx.shadowBlur = 3;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(s.x, s.y - 10);
@@ -560,7 +686,7 @@ export class MapEngine {
     ctx.fill();
     ctx.stroke();
     ctx.restore();
-    if (!this.follow) this.#label(this.pxPerKm > 60 ? 'HAB · Octavia E. Butler' : 'HAB', s.x + 16, s.y, COLORS.cyan);
+    if (!this.follow && !this.flat) this.#label(this.pxPerKm > 60 ? 'HAB · Octavia E. Butler' : 'HAB', s.x + 16, s.y, COLORS.cyan);
   }
 
   #drawWaypoints() {
@@ -569,7 +695,7 @@ export class MapEngine {
       const s = this.toScreen(w.lon, w.lat);
       ctx.beginPath();
       ctx.arc(s.x, s.y, 9, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(2,6,23,0.9)';
+      ctx.fillStyle = 'rgba(17,19,21,0.9)';
       ctx.fill();
       ctx.strokeStyle = COLORS.cyan;
       ctx.lineWidth = 2;
@@ -588,12 +714,20 @@ export class MapEngine {
     if (!sim.pos || !state.route) return;
     const s = this.toScreen(sim.pos.lon, sim.pos.lat);
     const ang = ((sim.heading * Math.PI) / 180) - this.rotation;
+    const tm = state.telemetry;
+    const vitals = tm.o2Pct < 25 || tm.hr >= 170 ? COLORS.red : tm.o2Pct < 50 || tm.hr >= 150 ? COLORS.amber : COLORS.green;
     ctx.save();
     ctx.translate(s.x, s.y);
-    ctx.strokeStyle = '#ffffff';
-    ctx.globalAlpha = 0.35 + 0.25 * Math.sin(now / 250);
+    // bio-radius: 50 m buddy/assist range around the crew member, tinted by vitals
+    const bio = Math.max(15, 0.05 * this.pxPerKm);
+    ctx.strokeStyle = vitals;
+    ctx.fillStyle = vitals;
+    ctx.globalAlpha = 0.1;
     ctx.beginPath();
-    ctx.arc(0, 0, 14 + 3 * Math.sin(now / 250), 0, Math.PI * 2);
+    ctx.arc(0, 0, bio, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 0.5 + 0.25 * Math.sin(now / 250);
+    ctx.lineWidth = 1.5;
     ctx.stroke();
     ctx.globalAlpha = 1;
     ctx.rotate(ang);
@@ -604,10 +738,14 @@ export class MapEngine {
     ctx.lineTo(-7, 8);
     ctx.closePath();
     ctx.fillStyle = '#ffffff';
-    ctx.shadowColor = COLORS.cyan;
-    ctx.shadowBlur = 14;
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+    ctx.shadowBlur = 3;
     ctx.fill();
     ctx.restore();
+    // vitals mini-badge
+    if (!this.follow) {
+      this.#label(L('map.ev', { o2: tm.o2Pct.toFixed(0), hr: tm.hr }), s.x + 16, s.y - 16, vitals);
+    }
   }
 
   #drawScaleBar() {

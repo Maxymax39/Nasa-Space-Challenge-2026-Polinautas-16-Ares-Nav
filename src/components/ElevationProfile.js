@@ -3,10 +3,11 @@
  * distance, coloured by slope, with waypoint ticks and the astronaut cursor.
  */
 import { t } from '../core/i18n.js';
+import { suitO2Depletion } from '../core/BioSafetyCalculators.js';
 
 const FONT = '"JetBrains Mono", ui-monospace, monospace';
 
-const slopeColor = (s) => (s > 20 ? '#ff2255' : s > 15 ? '#ffaa00' : s > 8 ? '#ffe15a' : '#39ff14');
+const slopeColor = (s) => (s > 20 ? '#e5534b' : s > 15 ? '#e2a13a' : s > 8 ? '#e6d27a' : '#5fb878');
 
 export class ElevationProfile {
   constructor(canvas, state) {
@@ -55,7 +56,7 @@ export class ElevationProfile {
     const Y = (z) => pad.t + (1 - (z - lo) / (hi - lo)) * ph;
 
     // grid and axis labels
-    ctx.strokeStyle = 'rgba(0,243,255,0.12)';
+    ctx.strokeStyle = 'rgba(111, 182, 217,0.12)';
     ctx.fillStyle = 'rgba(148,163,184,0.9)';
     ctx.lineWidth = 1;
     ctx.textAlign = 'right';
@@ -73,8 +74,8 @@ export class ElevationProfile {
 
     // filled area
     const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + ph);
-    grad.addColorStop(0, 'rgba(0,243,255,0.28)');
-    grad.addColorStop(1, 'rgba(0,243,255,0.02)');
+    grad.addColorStop(0, 'rgba(111, 182, 217,0.28)');
+    grad.addColorStop(1, 'rgba(111, 182, 217,0.02)');
     ctx.beginPath();
     ctx.moveTo(X(0), pad.t + ph);
     for (const p of pts) ctx.lineTo(X(p.distKm), Y(p.elev));
@@ -94,18 +95,33 @@ export class ElevationProfile {
       ctx.stroke();
     }
 
+    // suit O2 depletion curve along the route (right-hand scale, 0-100 %)
+    const O2 = (p) => pad.t + (suitO2Depletion(p.distKm, p.maxSlopeSoFar) / 100) * ph;
+    ctx.save();
+    ctx.strokeStyle = '#6fb6d9';
+    ctx.lineWidth = 1.25;
+    ctx.setLineDash([5, 3]);
+    ctx.beginPath();
+    pts.forEach((p, i) => (i ? ctx.lineTo(X(p.distKm), O2(p)) : ctx.moveTo(X(p.distKm), O2(p))));
+    ctx.stroke();
+    ctx.restore();
+    const last = pts[pts.length - 1];
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#6fb6d9';
+    ctx.fillText(`O₂ ${(100 - suitO2Depletion(last.distKm, last.maxSlopeSoFar)).toFixed(0)} %`, w - pad.r - 2, O2(last) - 8);
+
     // waypoint ticks
     ctx.textAlign = 'center';
     for (const m of route.wpMarks ?? []) {
       const x = X(m.distKm);
-      ctx.strokeStyle = 'rgba(0,243,255,0.5)';
+      ctx.strokeStyle = 'rgba(111, 182, 217,0.5)';
       ctx.setLineDash([3, 3]);
       ctx.beginPath();
       ctx.moveTo(x, pad.t);
       ctx.lineTo(x, pad.t + ph);
       ctx.stroke();
       ctx.setLineDash([]);
-      ctx.fillStyle = '#00f3ff';
+      ctx.fillStyle = '#6fb6d9';
       ctx.fillText(m.label, x, pad.t - 5);
     }
 
