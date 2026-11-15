@@ -5,29 +5,37 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ARES-NAV · Mars EVA Pathfinder</title>
   <meta name="description" content="ARES-NAV: cartografía multicapa y navegación táctica para EVAs en el Cráter Jezero, Marte.">
+  <link rel="icon" href="data:,">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Orbitron:wght@600;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" defer></script>
   <link rel="stylesheet" href="src/styles/tailwind-custom.css">
 </head>
-<body class="bg-slate-950 text-slate-200 h-screen overflow-hidden flex flex-col">
+<body class="h-screen overflow-hidden flex flex-col">
 
   <header class="topbar flex items-center gap-4 px-4 h-12 shrink-0">
     <div class="flex items-baseline gap-2">
       <span class="brand">ARES-NAV</span>
       <span class="version">v4.8.2-NASA</span>
     </div>
-    <span class="chip hidden md:inline-flex">JEZERO · 18.44°N 77.45°E</span>
-    <span class="chip chip-amber hidden lg:inline-flex" data-i18n="ui.link">ENLACE TIERRA 4–24 min · NAVEGACIÓN AUTÓNOMA</span>
-    <span id="tile-status" class="chip hidden lg:inline-flex" data-i18n="tiles.connecting">HiRISE: conectando…</span>
+    <span class="chip hidden lg:inline-flex">JEZERO · 18.44°N 77.45°E</span>
+    <span class="chip chip-amber hidden 2xl:inline-flex" data-i18n="ui.link">ENLACE TIERRA 4–24 min · NAVEGACIÓN AUTÓNOMA</span>
+    <span id="tile-status" class="chip hidden xl:inline-flex" data-i18n="tiles.connecting">HiRISE: conectando…</span>
     <div class="ml-auto flex items-center gap-2">
       <div class="seg" role="tablist" aria-label="Modo de vista" data-i18n-aria="ui.viewMode">
         <button id="view-plan" class="seg-btn active" role="tab" aria-selected="true" data-i18n="ui.viewPlan">Hábitat · Planificación</button>
         <button id="view-hud" class="seg-btn" role="tab" aria-selected="false" data-i18n="ui.viewHud">Traje · HUD</button>
       </div>
-      <select id="lang" class="lang-select" aria-label="Idioma" data-i18n-aria="ui.lang">
+      <select id="role" class="bar-select" aria-label="Puesto" data-i18n-aria="ui.role">
+        <option value="capcom" data-i18n="role.capcom">CapCom</option>
+        <option value="commander" data-i18n="role.commander">Comandante EVA</option>
+        <option value="rover" data-i18n="role.rover">Control de rover</option>
+        <option value="scientist" data-i18n="role.scientist">Científico de campo</option>
+      </select>
+      <select id="lang" class="bar-select" aria-label="Idioma" data-i18n-aria="ui.lang">
         <option value="es">ES · Español</option>
         <option value="en">EN · English</option>
       </select>
@@ -40,18 +48,19 @@
       <section class="panel-block">
         <h2 class="panel-title" data-i18n="ui.layers">Capas GIS</h2>
         <label class="check"><input type="checkbox" data-layer="hirise" checked><span class="swatch" style="background:#c98a5a"></span>HiRISE Optical</label>
-        <label class="check"><input type="checkbox" data-layer="topo"><span class="swatch" style="background:linear-gradient(90deg,#ffe15a,#ffaa00,#ff2255)"></span>MOLA Topo &amp; Gradient</label>
-        <label class="check"><input type="checkbox" data-layer="crism" checked><span class="swatch" style="background:#39ff14"></span>CRISM Spectral</label>
-        <label class="check"><input type="checkbox" data-layer="rad"><span class="swatch" style="background:#ff2255"></span>RAD Danger Overlay</label>
+        <label class="check"><input type="checkbox" data-layer="topo"><span class="swatch" style="background:linear-gradient(90deg,#e6d27a,#e2a13a,#e5534b)"></span>MOLA Topo &amp; Gradient</label>
+        <label class="check"><input type="checkbox" data-layer="crism" checked><span class="swatch" style="background:#5fb878"></span>CRISM Spectral</label>
+        <label class="check"><input type="checkbox" data-layer="contours"><span class="swatch" style="background:#d7dbe0"></span><span data-i18n="ui.contours">Curvas de nivel (10 m)</span></label>
+        <label class="check"><input type="checkbox" data-layer="rad"><span class="swatch" style="background:#e5534b"></span>RAD Danger Overlay</label>
         <div class="legend">
-          <div><i style="background:#ffe15a"></i>8–15°</div>
-          <div><i style="background:#ffaa00"></i>15–20°</div>
-          <div><i style="background:#ff2255"></i><span data-i18n="legend.blocked">&gt;20° bloqueado</span></div>
-          <div><i style="background:#39ff14"></i><span data-i18n="legend.clays">Arcillas</span></div>
-          <div><i style="background:#a6ff00"></i><span data-i18n="legend.carbonates">Carbonatos</span></div>
-          <div><i style="background:#c77dff"></i><span data-i18n="legend.sulfates">Sulfatos</span></div>
-          <div><i style="background:#7fd8ff"></i><span data-i18n="legend.silica">Sílice</span></div>
-          <div><i style="background:#ff2255"></i>&gt;0.24 mSv/h</div>
+          <div><i style="background:#e6d27a"></i>8–15°</div>
+          <div><i style="background:#e2a13a"></i>15–20°</div>
+          <div><i style="background:#e5534b"></i><span data-i18n="legend.blocked">&gt;20° bloqueado</span></div>
+          <div><i style="background:#5fb878"></i><span data-i18n="legend.clays">Arcillas</span></div>
+          <div><i style="background:#b5c95a"></i><span data-i18n="legend.carbonates">Carbonatos</span></div>
+          <div><i style="background:#b08ad6"></i><span data-i18n="legend.sulfates">Sulfatos</span></div>
+          <div><i style="background:#9ad1c9"></i><span data-i18n="legend.silica">Sílice</span></div>
+          <div><i style="background:#e5534b"></i>&gt;0.24 mSv/h</div>
         </div>
       </section>
 
@@ -64,6 +73,8 @@
           </select>
         </label>
         <label class="check"><input type="checkbox" id="round-trip" checked><span data-i18n="ui.roundTrip">Retorno al hábitat</span></label>
+        <label class="check"><input type="checkbox" id="auto-rtb" checked><span data-i18n="ui.autoRtb">Regreso a casa automático (RTB)</span></label>
+        <label class="check"><input type="checkbox" id="leak"><span data-i18n="ui.leak">Simulacro: fuga de O₂ en el traje</span></label>
         <div class="grid grid-cols-2 gap-2 mt-2">
           <button id="suggest" class="btn btn-cyan col-span-2" data-i18n="ui.suggest">Ruta científica sugerida</button>
           <button id="undo" class="btn" data-i18n="ui.undo">Deshacer WP</button>
@@ -122,15 +133,25 @@
 
     <section class="center min-w-0 min-h-0">
       <div id="stage" class="stage">
-        <div id="scene" class="scene"><canvas id="map" aria-label="Mapa táctico de Jezero" data-i18n-aria="ui.mapLabel"></canvas></div>
+        <div id="scene" class="scene"><canvas id="terrain3d" aria-hidden="true"></canvas><canvas id="map" aria-label="Mapa táctico de Jezero" data-i18n-aria="ui.mapLabel"></canvas></div>
         <canvas id="hud" aria-hidden="true"></canvas>
-        <div class="scanlines"></div>
         <div id="coords" class="coords">—</div>
         <div id="popup" class="popup" hidden></div>
         <div id="toast" class="toast" hidden></div>
+        <div id="cam-controls" class="cam-controls" role="group" aria-label="Cámara" data-i18n-aria="cam.label">
+          <button data-cam="left" title="Girar a la izquierda" data-i18n-title="cam.left">◀</button>
+          <button data-cam="up" title="Subir la cámara" data-i18n-title="cam.up">▲</button>
+          <button data-cam="down" title="Bajar la cámara" data-i18n-title="cam.down">▼</button>
+          <button data-cam="right" title="Girar a la derecha" data-i18n-title="cam.right">▶</button>
+          <button data-cam="in" title="Acercar" data-i18n-title="cam.in">+</button>
+          <button data-cam="out" title="Alejar" data-i18n-title="cam.out">−</button>
+          <button data-cam="orbit" aria-pressed="false" title="Rotación continua" data-i18n-title="cam.orbit">⟳</button>
+          <button data-cam="home" title="Recentrar cámara" data-i18n-title="cam.home">⌖</button>
+        </div>
         <div id="hud-controls" class="hud-controls">
           <button id="hud-start" class="btn btn-green">▶ EVA</button>
           <button id="hud-visor" class="btn btn-cyan" aria-pressed="true">Visor 16%</button>
+          <button id="hud-rtb" class="btn" aria-pressed="true">Regreso a Casa Automático: ON</button>
           <button id="hud-emergency" class="btn btn-red" data-i18n="ui.emergency">⚠ Regreso de emergencia</button>
         </div>
       </div>
