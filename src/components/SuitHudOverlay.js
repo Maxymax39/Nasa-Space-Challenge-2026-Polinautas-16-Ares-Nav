@@ -5,10 +5,13 @@
  * a flashing red alert box near unstable slopes, deep sand or radiation.
  */
 import { SUIT } from '../core/BioSafetyCalculators.js';
+// imported as L: several methods use `t` for telemetry or terrain
+import { t as L } from '../core/i18n.js';
 
 const C = { cyan: '#00f3ff', amber: '#ffaa00', red: '#ff2255', green: '#39ff14', dim: 'rgba(0,243,255,0.45)' };
 const FONT = '"JetBrains Mono", ui-monospace, monospace';
-const CARDINALS = { 0: 'N', 45: 'NE', 90: 'E', 135: 'SE', 180: 'S', 225: 'SO', 270: 'O', 315: 'NO' };
+/** Cardinal letter for a heading that is a multiple of 45°, in the current language. */
+const cardinal = (deg) => (deg % 45 === 0 ? L('hud.cardinals').split(',')[deg / 45] : undefined);
 const RADAR_RANGE_KM = 0.6;
 
 export class SuitHudOverlay {
@@ -105,7 +108,7 @@ export class SuitHudOverlay {
       ctx.lineTo(x, y + (major ? 16 : 10));
       ctx.stroke();
       if (major) {
-        const card = CARDINALS[deg];
+        const card = cardinal(deg);
         this.#text(card ?? String(deg).padStart(3, '0'), x, y - 8, {
           size: card ? 15 : 11, align: 'center', weight: card ? 800 : 500, color: card ? '#ffffff' : C.cyan,
         });
@@ -192,15 +195,15 @@ export class SuitHudOverlay {
     const { ctx, w, h } = this;
     const x = Math.max(28, w * 0.07), y0 = h * 0.3;
     const o2Color = t.o2Pct < 25 ? C.red : t.o2Pct < 50 ? C.amber : C.green;
-    this.#row('O₂ RESTANTE', `${t.o2Pct.toFixed(1)} %`, x, y0, { color: o2Color });
+    this.#row(L('hud.o2'), `${t.o2Pct.toFixed(1)} %`, x, y0, { color: o2Color });
     ctx.strokeStyle = C.dim;
     ctx.strokeRect(x, y0 + 32, 120, 7);
     ctx.fillStyle = o2Color;
     ctx.fillRect(x, y0 + 32, 120 * (t.o2Pct / 100), 7);
-    this.#row('PRESIÓN TRAJE', `${t.pressurePsid.toFixed(2)} psid`, x, y0 + 62);
-    this.#row('FREC. CARDÍACA', `${t.hr} bpm`, x, y0 + 106, { color: t.hr > 150 ? C.amber : '#ffffff' });
+    this.#row(L('hud.press'), `${t.pressurePsid.toFixed(2)} psid`, x, y0 + 62);
+    this.#row(L('hud.hr'), `${t.hr} bpm`, x, y0 + 106, { color: t.hr > 150 ? C.amber : '#ffffff' });
     this.#row('ppCO₂', `${t.ppCo2.toFixed(1)} mmHg`, x, y0 + 150, { color: t.ppCo2 > SUIT.maxPpCo2MmHg ? C.red : '#ffffff' });
-    this.#row('HIDRATACIÓN', `${Math.round(t.hydrationL * 1000)} mL`, x, y0 + 194);
+    this.#row(L('hud.hydration'), `${Math.round(t.hydrationL * 1000)} mL`, x, y0 + 194);
   }
 
   /** Right column: navigation and environment. */
@@ -208,12 +211,12 @@ export class SuitHudOverlay {
     const { w, h } = this;
     const x = w - Math.max(28, w * 0.07), y0 = h * 0.3;
     const o = { align: 'right' };
-    this.#row('SIGUIENTE WP', nav ? `${nav.label}  ${String(Math.round(nav.bearing)).padStart(3, '0')}°` : '—', x, y0, { ...o, color: C.green });
+    this.#row(L('hud.nextWp'),nav ? `${nav.label}  ${String(Math.round(nav.bearing)).padStart(3, '0')}°` : '—', x, y0, { ...o, color: C.green });
     this.#row('ETA', nav ? `${Math.max(1, Math.round(nav.etaMin))} min` : '—', x, y0 + 44, o);
-    this.#row('PENDIENTE', `${t.slope.toFixed(1)}°`, x, y0 + 88, { ...o, color: t.slope > 15 ? C.red : t.slope > 10 ? C.amber : '#ffffff' });
-    this.#row('RADIACIÓN', `${t.radRate.toFixed(3)} mSv/h`, x, y0 + 132, { ...o, color: t.radRate > SUIT.radAlertMsvPerHour ? C.red : t.radRate > 0.12 ? C.amber : '#ffffff' });
-    this.#row('DOSIS ACUM.', `${t.doseMsv.toFixed(3)} mSv`, x, y0 + 176, o);
-    this.#row('ÍNDICE SEGURIDAD', t.score.toFixed(0), x, y0 + 220, { ...o, color: t.score >= 75 ? C.green : t.score >= 50 ? C.amber : C.red });
+    this.#row(L('hud.slope'), `${t.slope.toFixed(1)}°`, x, y0 + 88, { ...o, color: t.slope > 15 ? C.red : t.slope > 10 ? C.amber : '#ffffff' });
+    this.#row(L('hud.rad'), `${t.radRate.toFixed(3)} mSv/h`, x, y0 + 132, { ...o, color: t.radRate > SUIT.radAlertMsvPerHour ? C.red : t.radRate > 0.12 ? C.amber : '#ffffff' });
+    this.#row(L('hud.dose'), `${t.doseMsv.toFixed(3)} mSv`, x, y0 + 176, o);
+    this.#row(L('hud.score'), t.score.toFixed(0), x, y0 + 220, { ...o, color: t.score >= 75 ? C.green : t.score >= 50 ? C.amber : C.red });
   }
 
   /** Heading-up tactical radar: route, hazard zones, habitat direction. */
@@ -295,7 +298,7 @@ export class SuitHudOverlay {
     ctx.beginPath();
     ctx.arc(cx + Math.cos(hb) * R, cy + Math.sin(hb) * R, 4.5, 0, Math.PI * 2);
     ctx.fill();
-    this.#text(`RADAR ${RADAR_RANGE_KM * 1000} m · ● HAB ${t.distanceKm(pos, t.habitat).toFixed(2)} km`, cx - R, cy + R + 16, { size: 10, weight: 500 });
+    this.#text(L('hud.radar', { m: RADAR_RANGE_KM * 1000, km: t.distanceKm(pos, t.habitat).toFixed(2) }), cx - R, cy + R + 16, { size: 10, weight: 500 });
   }
 
   #footer(state) {
@@ -304,8 +307,8 @@ export class SuitHudOverlay {
     const t = state.telemetry;
     const hh = Math.floor(t.hours), mm = Math.floor((t.hours - hh) * 60);
     this.#text(`EVA T+${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`, x, h - 74, { align: 'right', size: 16, color: '#ffffff', weight: 800 });
-    this.#text(`VISOR ${state.visorOn ? `${SUIT.visorTransmission * 100}% T · ANTIRREFLEJO` : 'ABIERTO · 57 000 lux'}`, x, h - 54, { align: 'right', size: 10, color: state.visorOn ? C.cyan : C.amber, weight: 500 });
-    this.#text('ENLACE TIERRA 4–24 min · NAV AUTÓNOMA', x, h - 38, { align: 'right', size: 10, weight: 500 });
+    this.#text(state.visorOn ? L('hud.visorOn', { pct: Math.round(SUIT.visorTransmission * 100) }) : L('hud.visorOff'), x, h - 54, { align: 'right', size: 10, color: state.visorOn ? C.cyan : C.amber, weight: 500 });
+    this.#text(L('hud.link'), x, h - 38, { align: 'right', size: 10, weight: 500 });
   }
 
   /** Alert box: flashing red for danger, steady amber for caution. */

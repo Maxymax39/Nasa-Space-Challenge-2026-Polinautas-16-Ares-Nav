@@ -5,6 +5,7 @@
  * Also draws hazard markers, science waypoints, the route and the astronaut.
  */
 import { isBlocked } from '../core/PathfindingAlgorithm.js';
+import { tr } from '../core/i18n.js';
 
 const TILE_BASE =
   'https://trek.nasa.gov/tiles/Mars/EQ/JEZ_hirise_soc_006_orthoMosaic_25cm_Eqc_latTs0_lon0_first_dd/1.0.0/default/default028mm';
@@ -386,7 +387,7 @@ export class MapEngine {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(String(z.id), s.x, s.y + 2);
-      if (!this.follow && this.pxPerKm > 60) this.#label(`${ZONE_GLYPH[z.type]} Z${z.id} ${z.name}`, s.x + 16, s.y, color);
+      if (!this.follow && this.pxPerKm > 60) this.#label(`${ZONE_GLYPH[z.type]} Z${z.id} ${tr(z, 'name')}`, s.x + 16, s.y, color);
     }
   }
 
@@ -407,7 +408,7 @@ export class MapEngine {
       ctx.fillRect(-5, -5, 10, 10);
       ctx.strokeRect(-5, -5, 10, 10);
       ctx.restore();
-      if (!this.follow && d.waypoint && this.pxPerKm > 90) this.#label(d.name.split(' - ')[0], s.x + 11, s.y - 12, color);
+      if (!this.follow && d.waypoint && this.pxPerKm > 90) this.#label(tr(d, 'name').split(' - ')[0], s.x + 11, s.y - 12, color);
     }
   }
 

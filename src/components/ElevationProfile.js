@@ -2,6 +2,8 @@
  * ElevationProfile — cross-section of the planned route: elevation against
  * distance, coloured by slope, with waypoint ticks and the astronaut cursor.
  */
+import { t } from '../core/i18n.js';
+
 const FONT = '"JetBrains Mono", ui-monospace, monospace';
 
 const slopeColor = (s) => (s > 20 ? '#ff2255' : s > 15 ? '#ffaa00' : s > 8 ? '#ffe15a' : '#39ff14');
@@ -37,7 +39,7 @@ export class ElevationProfile {
     if (!route || route.points.length < 2) {
       ctx.fillStyle = 'rgba(148,163,184,0.7)';
       ctx.textAlign = 'center';
-      ctx.fillText('PERFIL DE ELEVACIÓN — traza una ruta para ver el corte topográfico', w / 2, h / 2);
+      ctx.fillText(t('profile.empty'), w / 2, h / 2);
       return;
     }
 
