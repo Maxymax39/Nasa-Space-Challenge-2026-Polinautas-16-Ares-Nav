@@ -45,7 +45,8 @@ y los JSON no cargan desde `file://`.
 2. O haz **clic en el mapa** para añadir tus propios waypoints; el motor rodea todo lo intransitable.
 3. Activa capas con las casillas de **Capas GIS**. Haz clic en cualquier marcador para ver su ficha.
 4. **Iniciar EVA** simula la caminata. **Traje · HUD** (o la tecla `H`) cambia a la vista del casco.
-5. **Regreso de emergencia** recalcula desde la posición actual el trayecto seguro más corto al hábitat.
+5. El desplegable **ES / EN** de la cabecera cambia toda la interfaz entre español e inglés; la elección se recuerda en el navegador.
+6. **Regreso de emergencia** recalcula desde la posición actual el trayecto seguro más corto al hábitat.
 
 ## Datos: qué es real y qué es modelado
 
