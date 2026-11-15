@@ -173,6 +173,11 @@ En el puesto de Comandante EVA el terreno se dibuja en 3D con WebGL (three.js):
   curvas de nivel, zonas de riesgo, ruta y waypoints. Lo que se activa en **Capas GIS** aparece en 3D.
 - El sol se coloca según la hora local y proyecta sombras; el polvo oscurece el cielo y acorta la
   distancia visible (niebla), con los valores del modelo ambiental.
+- **Viento en 3D:** estelas de polvo que cruzan el terreno siguiendo el relieve, en la dirección y con la
+  intensidad del viento configurado; más viento o más polvo dan más estelas y más opacas. Se dibujan unas
+  cuatro veces más rápido que a escala real para que una brisa de 5 m/s se perciba. El botón ≋ las oculta.
+- **Rosa de viento en el HUD:** junto al radar, una flecha orientada respecto al rumbo indica hacia dónde
+  sopla, con velocidad, rumbo de origen y color según el umbral (ámbar ≥ 15 m/s, rojo ≥ 25 m/s).
 - Cono de visión de 60° delante del astronauta y postes verticales en el hábitat y los waypoints.
 - Cámara: arrastrar para girar e inclinar, rueda para acercar, doble clic para recentrar. Los botones
   sobre el HUD hacen lo mismo y añaden rotación continua alrededor del astronauta (⟳).
