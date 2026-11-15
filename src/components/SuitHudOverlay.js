@@ -5,6 +5,7 @@
  * a flashing red alert box near unstable slopes, deep sand or radiation.
  */
 import { SUIT } from '../core/BioSafetyCalculators.js';
+import { formatHour } from '../core/EnvironmentModel.js';
 // imported as L: several methods use `t` for telemetry or terrain
 import { t as L } from '../core/i18n.js';
 
@@ -52,7 +53,8 @@ export class SuitHudOverlay {
     ctx.shadowBlur = 6;
 
     this.#visorFrame();
-    this.#compass(state.sim.heading, state.nav);
+    this.#compass(state.sim.heading, state.nav, state.envNow);
+    this.#environment(state.envNow);
     this.#reticle(state.nav);
     this.#suitColumn(state.telemetry);
     this.#navColumn(state.telemetry, state.nav);
@@ -87,7 +89,7 @@ export class SuitHudOverlay {
   }
 
   /** Rotating compass tape with heading readout and next-waypoint bug. */
-  #compass(heading, nav) {
+  #compass(heading, nav, env) {
     const { ctx, w } = this;
     const tapeW = Math.min(620, w * 0.5), cx = w / 2, y = 62;
     const pxPerDeg = tapeW / 90;
@@ -138,6 +140,23 @@ export class SuitHudOverlay {
     ctx.stroke();
     this.#text(`HDG ${hdg}°`, cx, y + 41, { size: 15, align: 'center', color: '#ffffff', weight: 800 });
 
+    // wind bug: amber wedge above the tape at the bearing the wind blows from
+    if (env && env.windSpeed >= 1) {
+      const rel = ((env.windDir - heading + 540) % 360) - 180;
+      const x = cx + Math.max(-45, Math.min(45, rel)) * pxPerDeg;
+      ctx.save();
+      ctx.fillStyle = C.amber;
+      ctx.shadowColor = C.amber;
+      ctx.globalAlpha = Math.abs(rel) > 45 ? 0.45 : 1;
+      ctx.beginPath();
+      ctx.moveTo(x, y - 20);
+      ctx.lineTo(x - 6, y - 31);
+      ctx.lineTo(x + 6, y - 31);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
     // waypoint bearing bug (clamped to the tape ends)
     if (nav) {
       const rel = ((nav.bearing - heading + 540) % 360) - 180;
@@ -154,6 +173,19 @@ export class SuitHudOverlay {
       if (Math.abs(rel) > 45) this.#text(rel > 0 ? '▶' : '◀', x + (rel > 0 ? 14 : -14), y + 26, { color: C.green, align: 'center' });
       ctx.shadowColor = C.cyan;
     }
+  }
+
+  /** Weather strip under the visor rim: air, dust, wind relative to travel, local time. */
+  #environment(v) {
+    if (!v) return;
+    const { w, h } = this;
+    const xl = Math.max(28, w * 0.07), xr = w - xl, y = h * 0.21;
+    const tone = { go: C.cyan, caution: C.amber, nogo: C.red }[v.status.level];
+    const small = { size: 11, weight: 600 };
+    this.#text(L('hud.env', { t: v.airTempC.toFixed(0), p: v.pressurePa.toFixed(0) }), xl, y, { ...small, color: '#ffffff' });
+    this.#text(L('hud.dust', { tau: v.tau.toFixed(1), vis: v.visibilityKm >= 99 ? '>99' : v.visibilityKm.toFixed(0) }), xl, y + 16, { ...small, color: tone });
+    this.#text(L('hud.wind', { v: v.windSpeed.toFixed(0), dir: String(v.windDir).padStart(3, '0') }), xr, y, { ...small, align: 'right', color: C.amber });
+    this.#text(L('hud.windRel', { h: v.headwindMs.toFixed(0), c: Math.abs(v.crosswindMs).toFixed(0) }), xr, y + 16, { ...small, align: 'right' });
   }
 
   /** Centre reticle plus an arrow pointing at the next waypoint. */
@@ -308,6 +340,7 @@ export class SuitHudOverlay {
     const hh = Math.floor(t.hours), mm = Math.floor((t.hours - hh) * 60);
     this.#text(`EVA T+${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`, x, h - 74, { align: 'right', size: 16, color: '#ffffff', weight: 800 });
     this.#text(state.visorOn ? L('hud.visorOn', { pct: Math.round(SUIT.visorTransmission * 100) }) : L('hud.visorOff'), x, h - 54, { align: 'right', size: 10, color: state.visorOn ? C.cyan : C.amber, weight: 500 });
+    if (state.envNow) this.#text(L('hud.ltst', { time: formatHour(state.envNow.hour) }), x, h - 92, { align: 'right', size: 10, weight: 500 });
     this.#text(L('hud.link'), x, h - 38, { align: 'right', size: 10, weight: 500 });
   }
 

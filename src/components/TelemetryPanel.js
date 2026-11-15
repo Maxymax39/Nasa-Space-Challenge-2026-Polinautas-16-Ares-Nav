@@ -3,6 +3,7 @@
  * consumables budget (NASA-STD-3001 envelope).
  */
 import { habitatConsumables, SUIT } from '../core/BioSafetyCalculators.js';
+import { formatHour } from '../core/EnvironmentModel.js';
 import { t, applyI18n, getLang, onLangChange } from '../core/i18n.js';
 
 const range = ([lo, hi], digits = 1) => `${lo.toFixed(digits)} – ${hi.toFixed(digits)}`;
@@ -47,6 +48,27 @@ export class TelemetryPanel {
           <div><dt><span data-i18n="panel.radRate"></span> (≤ ${SUIT.radAlertMsvPerHour})</dt><dd data-k="rad">— mSv/h</dd></div>
           <div><dt data-i18n="panel.progress"></dt><dd data-k="prog">0.00 km</dd></div>
           <div><dt data-i18n="panel.time"></dt><dd data-k="time">00:00</dd></div>
+        </dl>
+      </section>
+
+      <section class="panel-block">
+        <h2 class="panel-title" data-i18n="env.panel"></h2>
+        <div class="env-status">
+          <span class="env-badge" data-k="envBadge">GO</span>
+          <span class="hint" style="margin:0" data-k="envTime"></span>
+        </div>
+        <ul class="env-reasons" data-k="envReasons"></ul>
+        <dl class="metrics">
+          <div><dt data-i18n="env.airTemp"></dt><dd data-k="envAir">—</dd></div>
+          <div><dt data-i18n="env.groundTemp"></dt><dd data-k="envGround">—</dd></div>
+          <div><dt data-i18n="env.pressure"></dt><dd data-k="envPress">—</dd></div>
+          <div><dt data-i18n="env.density"></dt><dd data-k="envDensity">—</dd></div>
+          <div><dt data-i18n="env.dust"></dt><dd data-k="envDust">—</dd></div>
+          <div><dt data-i18n="env.light"></dt><dd data-k="envLight">—</dd></div>
+          <div><dt data-i18n="env.wind"></dt><dd data-k="envWind">—</dd></div>
+          <div><dt data-i18n="env.q"></dt><dd data-k="envQ">—</dd></div>
+          <div><dt data-i18n="env.rad"></dt><dd data-k="envRad">—</dd></div>
+          <div><dt data-i18n="env.devils"></dt><dd data-k="envDevils">—</dd></div>
         </dl>
       </section>
 
@@ -123,6 +145,33 @@ export class TelemetryPanel {
     e.o2dep.textContent = `${s.o2DepletionPct.toFixed(1)} %`;
     e.dose.textContent = `${route.radiationMsv.toFixed(3)} mSv`;
     e.water.textContent = `${s.hydrationL.toFixed(2)} L`;
+  }
+
+  /** Refresh the environmental conditions block (called a few times per second). */
+  updateEnvironment() {
+    const v = this.state.envNow, e = this.el;
+    if (!v) return;
+    const color = { go: '#39ff14', caution: '#ffaa00', nogo: '#ff2255' }[v.status.level];
+    e.envBadge.textContent = t(`env.${v.status.level}`);
+    e.envBadge.style.color = color;
+    e.envTime.textContent = `${t('env.localTime')} ${formatHour(v.hour)}`;
+    const reasons = v.status.reasons.map((r) => `<li class="${r.level}">${t(r.key)}</li>`).join('') || `<li>${t('env.ok')}</li>`;
+    if (reasons !== this.lastReasons) {
+      this.lastReasons = reasons;
+      e.envReasons.innerHTML = reasons;
+    }
+    e.envAir.textContent = `${v.airTempC.toFixed(0)} °C`;
+    e.envGround.textContent = `${v.groundTempC.toFixed(0)} °C`;
+    e.envPress.textContent = `${v.pressurePa.toFixed(0)} Pa`;
+    e.envDensity.textContent = `${(v.airDensity * 1000).toFixed(1)} g/m³`;
+    e.envDust.textContent = `τ ${v.tau.toFixed(1)} · ${v.visibilityKm >= 99 ? '>99' : v.visibilityKm.toFixed(0)} km`;
+    e.envDust.style.color = v.tau >= 3 ? '#ff2255' : v.tau >= 1.5 ? '#ffaa00' : '';
+    e.envLight.textContent = `${Math.round(v.illuminationLux / 100) * 100} lux`;
+    e.envWind.textContent = `${v.windSpeed.toFixed(0)} m/s · ${String(v.windDir).padStart(3, '0')}°`;
+    e.envQ.innerHTML = `${v.dynamicPressurePa.toFixed(2)} Pa<small>${t('env.equiv', { v: v.earthEquivalentWindMs.toFixed(1) })}</small>`;
+    e.envRad.textContent = `×${v.radFactor.toFixed(1)}`;
+    e.envRad.style.color = v.radFactor >= 3 ? '#ff2255' : v.radFactor > 1 ? '#ffaa00' : '';
+    e.envDevils.textContent = t(`env.devils.${v.dustDevils}`);
   }
 
   /** Refresh live suit telemetry (called a few times per second). */

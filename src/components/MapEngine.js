@@ -5,7 +5,8 @@
  * Also draws hazard markers, science waypoints, the route and the astronaut.
  */
 import { isBlocked } from '../core/PathfindingAlgorithm.js';
-import { tr } from '../core/i18n.js';
+// `t` is imported as L: this file uses `t` for the terrain
+import { tr, t as L } from '../core/i18n.js';
 
 const TILE_BASE =
   'https://trek.nasa.gov/tiles/Mars/EQ/JEZ_hirise_soc_006_orthoMosaic_25cm_Eqc_latTs0_lon0_first_dd/1.0.0/default/default028mm';
@@ -165,6 +166,11 @@ export class MapEngine {
     });
 
     return { relief, topo, crism, rad };
+  }
+
+  /** Rebuild the layer rasters, e.g. after space weather rescales the radiation field. */
+  refreshRasters() {
+    this.rasters = this.#buildRasters();
   }
 
   /* ---------- NASA Mars Trek tiles ---------- */
@@ -328,6 +334,7 @@ export class MapEngine {
     ctx.strokeRect(nw.x, nw.y, se.x - nw.x, se.y - nw.y);
     ctx.restore();
 
+    this.#drawWeather(now);
     this.#drawZones(now);
     if (state.layers.crism) this.#drawMinerals();
     if (state.layers.rad) this.#drawRadLabels();
@@ -335,7 +342,86 @@ export class MapEngine {
     this.#drawHabitat(now);
     this.#drawWaypoints();
     this.#drawAstronaut(now);
-    if (!this.follow) this.#drawScaleBar();
+    if (!this.follow) {
+      this.#drawScaleBar();
+      this.#drawWindIndicator();
+    }
+  }
+
+  /** Dust haze that thickens with optical depth, plus streaks blowing downwind. */
+  #drawWeather(now) {
+    const env = this.state.envNow;
+    if (!env) return;
+    const { ctx } = this;
+    const haze = Math.min(0.6, Math.max(0, env.tau - 0.3) * 0.1);
+    if (haze > 0.01) {
+      ctx.fillStyle = `rgba(196,140,90,${haze})`;
+      ctx.fillRect(0, 0, this.w, this.h);
+    }
+    const dt = Math.min(0.05, (now - (this.lastWeather ?? now)) / 1000);
+    this.lastWeather = now;
+    if (env.windSpeed < 1) return;
+
+    const count = Math.round(Math.min(90, 12 + env.windSpeed * 2.2));
+    this.particles ??= [];
+    while (this.particles.length < count) {
+      this.particles.push({ x: Math.random() * this.w, y: Math.random() * this.h, life: Math.random() });
+    }
+    this.particles.length = count;
+
+    // windDir is where the wind comes FROM; streaks travel the opposite way
+    const ang = ((env.windDir + 180) * Math.PI) / 180 - this.rotation;
+    const vx = Math.sin(ang), vy = -Math.cos(ang);
+    const speedPx = 20 + env.windSpeed * 14;
+    const len = 6 + env.windSpeed * 1.4;
+    ctx.strokeStyle = `rgba(235,200,150,${Math.min(0.75, 0.25 + env.tau * 0.08)})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (const p of this.particles) {
+      p.x += vx * speedPx * dt;
+      p.y += vy * speedPx * dt;
+      p.life -= dt * 0.4;
+      if (p.life <= 0 || p.x < -20 || p.y < -20 || p.x > this.w + 20 || p.y > this.h + 20) {
+        p.x = Math.random() * this.w;
+        p.y = Math.random() * this.h;
+        p.life = 1;
+      }
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x - vx * len, p.y - vy * len);
+    }
+    ctx.stroke();
+  }
+
+  /** Wind arrow (pointing downwind) and speed, top-right of the planning map. */
+  #drawWindIndicator() {
+    const env = this.state.envNow;
+    if (!env) return;
+    const { ctx } = this;
+    const cx = this.w - 34, cy = 34, r = 18;
+    const color = env.windSpeed >= 25 ? COLORS.red : env.windSpeed >= 15 ? COLORS.amber : COLORS.cyan;
+    ctx.save();
+    ctx.fillStyle = 'rgba(2,6,23,0.78)';
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.translate(cx, cy);
+    ctx.rotate(((env.windDir + 180) * Math.PI) / 180);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(0, -12);
+    ctx.lineTo(6, 2);
+    ctx.lineTo(2, 2);
+    ctx.lineTo(2, 12);
+    ctx.lineTo(-2, 12);
+    ctx.lineTo(-2, 2);
+    ctx.lineTo(-6, 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    this.#label(L('map.wind', { v: env.windSpeed.toFixed(0) }), cx - r - 6, cy, color, 'right');
   }
 
   #label(text, x, y, color, align = 'left') {
@@ -344,7 +430,7 @@ export class MapEngine {
     ctx.textAlign = align;
     ctx.textBaseline = 'middle';
     const w = ctx.measureText(text).width;
-    const bx = align === 'center' ? x - w / 2 - 4 : x - 4;
+    const bx = align === 'center' ? x - w / 2 - 4 : align === 'right' ? x - w - 4 : x - 4;
     ctx.fillStyle = 'rgba(2,6,23,0.78)';
     ctx.fillRect(bx, y - 8, w + 8, 16);
     ctx.fillStyle = color;
@@ -415,7 +501,7 @@ export class MapEngine {
   #drawRadLabels() {
     for (const h of this.terrain.hazards.radiation.hotspots) {
       const s = this.toScreen(h.lon, h.lat);
-      this.#label(`☢ ${h.peakMsvPerHour.toFixed(2)} mSv/h`, s.x, s.y, COLORS.red, 'center');
+      this.#label(`☢ ${(h.peakMsvPerHour * this.terrain.radFactor).toFixed(2)} mSv/h`, s.x, s.y, COLORS.red, 'center');
     }
   }
 
