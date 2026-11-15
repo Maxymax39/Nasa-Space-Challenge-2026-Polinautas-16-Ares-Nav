@@ -8,6 +8,7 @@ import {
 } from './core/PathfindingAlgorithm.js';
 import {
   evaSummary, suitO2Depletion, evaSafetyScore, evaHydrationL, traverseSpeedKmh, heartRateBpm, SUIT,
+  o2UptakeLpm, pointOfSafeReturn,
 } from './core/BioSafetyCalculators.js';
 import { unlockAudio, setMuted, sfx } from './core/AudioFeedback.js';
 import { t, tr, applyI18n, getLang, setLang, onLangChange } from './core/i18n.js';
@@ -18,12 +19,13 @@ import { MapEngine } from './components/MapEngine.js';
 import { SuitHudOverlay } from './components/SuitHudOverlay.js';
 import { TelemetryPanel } from './components/TelemetryPanel.js';
 import { ElevationProfile } from './components/ElevationProfile.js';
+import { Terrain3D } from './components/Terrain3D.js';
 
 const $ = (id) => document.getElementById(id);
 const RAW_IMAGES_URL = 'https://mars.nasa.gov/mars2020/multimedia/raw-images/';
 
 const state = {
-  layers: { hirise: true, topo: false, crism: true, rad: false },
+  layers: { hirise: true, topo: false, crism: true, rad: false, contours: false },
   waypoints: [], // user waypoints; the habitat is always the implicit start
   roundTrip: true,
   mode: 'foot',
@@ -35,7 +37,11 @@ const state = {
   telemetry: {
     o2Pct: 100, pressurePsid: SUIT.pressurePsid, hr: 72, ppCo2: 3.5, hydrationL: 0,
     doseMsv: 0, radRate: 0, slope: 0, elev: 0, distKm: 0, hours: 0, score: 100,
+    metabolicW: 115, coreTempC: 36.9, leakPct: 0,
   },
+  // automatic return-to-base: psr is the live Point of Safe Return, null when no EVA is under way
+  rtb: { auto: true, leak: false, psr: null, warned: false },
+  rover: null, // support rover state; null when the crew is on foot
   nav: null,
   alert: { level: 'none' },
   // environment controls (filled from the "nominal" preset at boot) and derived conditions
@@ -44,6 +50,7 @@ const state = {
 };
 
 let terrain, envRef, map, hud, panel, profile;
+let view3d = null; // stays null without WebGL or three.js; the HUD then uses the tilted 2D map
 
 /* ---------- small UI helpers ---------- */
 
@@ -80,6 +87,7 @@ function resetSim() {
   s.km = 0;
   s.index = 0;
   s.pos = { ...terrain.habitat };
+  clearSafeReturn();
   if (state.route?.points.length > 1) s.heading = terrain.bearingDeg(state.route.points[0], state.route.points[1]);
   syncStartButtons();
 }
@@ -169,7 +177,7 @@ function suggestedRoute() {
   recompute();
 }
 
-function triggerEmergency() {
+function triggerEmergency(auto = false) {
   const s = state.sim;
   let traveled = [];
   let from;
@@ -195,6 +203,7 @@ function triggerEmergency() {
     ...analysis,
     summary: evaSummary(analysis),
     kind: 'emergency',
+    auto, // true when the O2 reserve limit turned the crew around, not the crew
     speedFactor,
     emergencyIndex: Math.max(0, startIndex - 1),
     notes: [{ key: ret.direct ? 'note.direct' : 'note.detour' }],
@@ -206,7 +215,8 @@ function triggerEmergency() {
   s.pos = { lon: analysis.points[s.index].lon, lat: analysis.points[s.index].lat };
   s.running = true;
   sfx.emergency();
-  toast(t('toast.emergency', { km: (analysis.distanceKm - s.km).toFixed(2) }), true);
+  backClock = 0;
+  toast(t(auto ? 'rtb.toast.auto' : 'toast.emergency', { km: (analysis.distanceKm - s.km).toFixed(2) }), true);
   panel.updateRoute();
   syncStartButtons();
 }
@@ -225,23 +235,42 @@ function toggleSim() {
     return;
   }
   const s = state.sim;
-  if (!s.running && s.km >= state.route.distanceKm) { s.km = 0; s.index = 0; }
+  if (!s.running && s.km >= state.route.distanceKm) { s.km = 0; s.index = 0; clearSafeReturn(); }
   s.running = !s.running;
   sfx.toggle();
   syncStartButtons();
 }
 
-const angleLerp = (a, b, k) => (a + ((((b - a) % 360) + 540) % 360 - 180) * k + 360) % 360;
+/**
+ * Metabolic rate and core temperature from heart rate. Rough but in the right
+ * range: ~115 W resting, 250-350 W for steady EVA work, and the cooling garment
+ * keeps up until about 300 W, after which core temperature creeps upward.
+ * Core temperature lags the workload by a few simulated minutes.
+ */
+function thermalState(tm, dtSec) {
+  tm.metabolicW = 115 + Math.max(0, tm.hr - 72) * 4.2;
+  tm.o2Lpm = o2UptakeLpm(tm.metabolicW);
+  const target = 36.9 + Math.max(0, tm.metabolicW - 300) / 220;
+  const k = dtSec ? Math.min(1, (dtSec * state.sim.speedX) / 600) : 1;
+  tm.coreTempC += (target - tm.coreTempC) * k;
+}
+
+const angleLerp =(a, b, k) => (a + ((((b - a) % 360) + 540) % 360 - 180) * k + 360) % 360;
 
 /** Advance the simulation and refresh telemetry, navigation and alerts. */
 function updateSim(dtSec) {
   // `tm` (not `t`): `t` is the translation function in this module
   const { sim: s, telemetry: tm, route } = state;
   if (!route) {
-    Object.assign(tm, { o2Pct: 100, hr: 72, ppCo2: 3.5, hydrationL: 0, doseMsv: 0, distKm: 0, hours: 0, score: 100 });
+    Object.assign(tm, {
+      o2Pct: 100, hr: 72, ppCo2: 3.5, hydrationL: 0, doseMsv: 0, distKm: 0, hours: 0, score: 100,
+      metabolicW: 115, coreTempC: 36.9,
+    });
     const here = terrain.sample(s.pos.lon, s.pos.lat);
     Object.assign(tm, { slope: here.slope, elev: here.elev, radRate: here.rad });
     state.nav = null;
+    clearSafeReturn();
+    updateRover(null);
     state.envNow = deriveEnvironment(envRef, state.env, 0, s.heading);
     setAlert(environmentAlert(state.envNow) ?? { level: 'none' });
     return;
@@ -270,12 +299,14 @@ function updateSim(dtSec) {
   s.pos = { lon: mix('lon'), lat: mix('lat') };
   if (seg > 0) s.heading = angleLerp(s.heading, terrain.bearingDeg(a, b), s.running ? Math.min(1, dtSec * 4) : 1);
 
-  const o2Dep = s.km > 0 ? suitO2Depletion(s.km, a.maxSlopeSoFar) : 0;
+  if (state.rtb.leak && s.running) tm.leakPct += (SUIT.leakDrillPctPerHour * dtSec * s.speedX) / 3600;
+  const o2Dep = Math.min(100, (s.km > 0 ? suitO2Depletion(s.km, a.maxSlopeSoFar) : 0) + tm.leakPct);
   const hrTarget = heartRateBpm(a.slope, a.costMul, s.running);
   tm.hr = Math.round(tm.hr + (hrTarget - tm.hr) * Math.min(1, dtSec * 1.5 + (dtSec ? 0 : 1)));
   tm.o2Pct = 100 - o2Dep;
   tm.pressurePsid = SUIT.pressurePsid + 0.015 * Math.sin(performance.now() / 1700);
   tm.ppCo2 = 3.5 + Math.max(0, tm.hr - 72) * 0.045;
+  thermalState(tm, dtSec);
   tm.hours = mix('hours');
   tm.hydrationL = evaHydrationL(tm.hours);
   tm.doseMsv = mix('doseMsv');
@@ -298,9 +329,140 @@ function updateSim(dtSec) {
     etaMin: Math.max(0, (target.hours - tm.hours) * 60),
   };
 
+  updateRover(pts, a);
+
   // terrain danger first, then a NO-GO environment, then terrain cautions
   const terrainAlert = s.km > 0 && s.km < route.distanceKm ? evaluateAlert(a, pts) : { level: 'none' };
-  setAlert(terrainAlert.level === 'danger' ? terrainAlert : environmentAlert(state.envNow) ?? terrainAlert);
+  const envAlert = terrainAlert.level === 'danger' ? terrainAlert : environmentAlert(state.envNow) ?? terrainAlert;
+
+  // last, because an automatic return swaps state.route under us
+  setAlert(checkSafeReturn(a, dtSec) ?? envAlert);
+}
+
+/* ---------- support rover ---------- */
+
+// The rover trails the crew on the same track and carries the samples.
+// Battery and cargo figures are planning numbers for this simulation.
+const ROVER = { followKm: 0.03, cargoMaxKg: 60, sampleKgPerStop: 6, batteryPctPerKm: 3.2 };
+
+/** Position on the route at a given distance from the start. */
+function routePointAt(pts, km) {
+  let i = Math.min(state.sim.index, pts.length - 2);
+  while (i > 0 && pts[i].distKm > km) i--;
+  const a = pts[i], b = pts[i + 1];
+  const seg = b.distKm - a.distKm;
+  const k = seg > 0 ? Math.min(1, Math.max(0, (km - a.distKm) / seg)) : 0;
+  return { lon: a.lon + (b.lon - a.lon) * k, lat: a.lat + (b.lat - a.lat) * k };
+}
+
+function updateRover(pts, here) {
+  if (state.mode !== 'rover') {
+    state.rover = null;
+    return;
+  }
+  const s = state.sim;
+  const onRoute = pts && pts.length > 1;
+  const pos = onRoute ? routePointAt(pts, Math.max(0, s.km - ROVER.followKm)) : { ...terrain.habitat };
+  const tetherM = terrain.distanceKm(pos, s.pos) * 1000;
+  const stops = onRoute
+    ? state.route.wpMarks.filter((m) => m.label !== 'HAB' && m.distKm <= s.km + 1e-6).length
+    : 0;
+  // samples stay on board if the plan is replaced by an emergency return
+  const carried = s.km > 0 ? state.rover?.cargoKg ?? 0 : 0;
+  state.rover = {
+    pos,
+    heading: tetherM > 1 ? terrain.bearingDeg(pos, s.pos) : s.heading,
+    tetherM,
+    batteryPct: Math.max(0, 100 - s.km * ROVER.batteryPctPerKm - (here?.maxSlopeSoFar ?? 0) * 0.5),
+    cargoKg: Math.max(carried, Math.min(ROVER.cargoMaxKg, stops * ROVER.sampleKgPerStop)),
+    cargoMaxKg: ROVER.cargoMaxKg,
+    // heavy dust attenuates the UHF relay between suit, rover and habitat
+    comms: state.envNow && state.envNow.tau >= 3 ? 'degraded' : 'ok',
+  };
+}
+
+/* ---------- point of safe return / automatic RTB ---------- */
+
+let backClock = 0; // seconds until the way home is re-planned
+let lastMargin = null; // O2 margin at the previous update, to see how fast it is closing
+let backLeg = null; // cached {distanceKm, durationH, maxSlopeDeg} of the way home
+
+function clearSafeReturn() {
+  state.rtb.psr = null;
+  state.rtb.warned = false;
+  state.telemetry.leakPct = 0;
+  backLeg = null;
+  lastMargin = null;
+  backClock = 0;
+}
+
+/**
+ * Keep the Point of Safe Return current and act on it.
+ * With auto-return on, crossing the limit re-routes to the habitat. With it
+ * off, the crew only gets the warning and keeps the route they chose.
+ * @returns the HUD alert to show, or null
+ */
+function checkSafeReturn(here, dtSec) {
+  const { sim: s, telemetry: tm, rtb } = state;
+  let route = state.route;
+  if (!(s.km > 0 && s.km < route.distanceKm)) {
+    rtb.psr = null;
+    return null;
+  }
+
+  // The way home is re-planned a couple of times per second, not every frame.
+  // At high time compression that still has to mean every few simulated minutes.
+  backClock -= dtSec * Math.max(1, s.speedX / 240);
+  if (!backLeg || backClock <= 0) {
+    backClock = 0.4;
+    if (route.kind === 'emergency') {
+      const pts = route.points;
+      let maxSlopeDeg = 0;
+      for (let i = s.index; i < pts.length; i++) maxSlopeDeg = Math.max(maxSlopeDeg, pts[i].slope);
+      backLeg = { distanceKm: route.distanceKm - s.km, durationH: pts[pts.length - 1].hours - tm.hours, maxSlopeDeg };
+    } else {
+      const ret = emergencyReturn(terrain, s.pos);
+      if (ret.ok) backLeg = analyzeRoute(terrain, ret.cells, state.mode, route.speedFactor);
+    }
+  }
+  if (!backLeg) return null;
+
+  const psr = pointOfSafeReturn({
+    o2Pct: tm.o2Pct,
+    returnKm: backLeg.distanceKm,
+    returnMaxSlope: backLeg.maxSlopeDeg,
+    maxSlopeSoFar: here.maxSlopeSoFar,
+    returnHours: backLeg.durationH,
+    leakPctPerHour: rtb.leak ? SUIT.leakDrillPctPerHour : 0,
+  });
+  // Turn around one step early rather than one step late: if the margin is
+  // closing fast enough to be gone by the next update, treat it as reached.
+  const closing = Math.max(0, (lastMargin ?? psr.marginPct) - psr.marginPct);
+  lastMargin = psr.marginPct;
+  if (route.kind !== 'emergency' && psr.marginPct - closing <= 0) psr.critical = true;
+  rtb.psr = psr;
+
+  if (psr.critical && route.kind !== 'emergency') {
+    if (rtb.auto) {
+      triggerEmergency(true);
+      route = state.route;
+    } else if (!rtb.warned) {
+      rtb.warned = true;
+      sfx.danger();
+      toast(t('rtb.toast.manual'), true);
+    }
+  }
+
+  const vars = {
+    o2: tm.o2Pct.toFixed(0), need: psr.needPct.toFixed(0), margin: psr.reservePct, km: psr.returnKm.toFixed(2),
+  };
+  if (route.kind === 'emergency' && route.auto) {
+    return { level: 'danger', title: t('rtb.activated'), detail: t('rtb.detail', vars) };
+  }
+  if (psr.critical && route.kind !== 'emergency') {
+    return { level: 'danger', title: t('rtb.limit'), detail: t('rtb.manual', vars) };
+  }
+  return null;
 }
 
 /** HUD alert for a NO-GO environment (storm, particle event, extreme wind), or null. */
@@ -415,6 +577,7 @@ function setView(view) {
     savedView = { center: { ...map.center }, pxPerKm: map.pxPerKm };
     map.follow = true;
     map.pxPerKm = 620;
+    if (view3d && !setView.hinted) { setView.hinted = true; toast(t('hud3d.hint')); }
   } else {
     map.follow = false;
     map.rotation = 0;
@@ -426,8 +589,47 @@ function setView(view) {
 
 function resizeAll() {
   map.resize();
+  view3d?.resize();
   hud.resize();
   profile.resize();
+}
+
+/* ---------- crew stations ---------- */
+
+// Each station opens the app the way that person would use it. There is no
+// login: the selector only changes the starting view and layers.
+const ROLE_KEY = 'ares-nav-role';
+const ROLES = {
+  capcom: { view: 'plan', layers: { hirise: true, topo: false, crism: true, rad: true } },
+  rover: { view: 'plan', mode: 'rover', layers: { hirise: true, topo: true, crism: false, rad: true } },
+  commander: { view: 'hud' },
+  scientist: { view: 'plan', layers: { hirise: true, topo: false, crism: true, rad: false } },
+};
+
+function savedRole() {
+  try {
+    const r = localStorage.getItem(ROLE_KEY);
+    return ROLES[r] ? r : 'capcom';
+  } catch {
+    return 'capcom';
+  }
+}
+
+function applyRole(name, announce = true) {
+  const role = ROLES[name] ?? ROLES.capcom;
+  $('role').value = name;
+  try { localStorage.setItem(ROLE_KEY, name); } catch { /* private window: just don't remember it */ }
+  if (role.layers) {
+    Object.assign(state.layers, role.layers);
+    document.querySelectorAll('[data-layer]').forEach((box) => { box.checked = state.layers[box.dataset.layer]; });
+  }
+  if (role.mode && role.mode !== state.mode) {
+    state.mode = role.mode;
+    $('mode').value = role.mode;
+    recompute(false);
+  }
+  setView(role.view);
+  if (announce) toast(t(`role.toast.${name}`));
 }
 
 /* ---------- popups ---------- */
@@ -452,7 +654,7 @@ function showMarker(marker, at) {
     el.querySelector('[data-add]').addEventListener('click', () => addWaypoint(d));
   } else if (marker.type === 'rad') {
     openPopup(`
-      <h3 style="color:#ff2255">☢ ${tr(d, 'name')}</h3>
+      <h3 style="color:#e5534b">☢ ${tr(d, 'name')}</h3>
       <p>${t('popup.radBody', { peak: (d.peakMsvPerHour * terrain.radFactor).toFixed(2), max: LIMITS.maxRadMsvPerHour })}</p>`, at);
   } else {
     openPopup(`
@@ -481,7 +683,26 @@ async function boot() {
       $('coords').textContent = `${fmtCoord(p)} · ${c.elev.toFixed(0)} m · ${c.slope.toFixed(1)}° · ${c.rad.toFixed(3)} mSv/h${flag}`;
     },
   });
+  if (Terrain3D.supported) {
+    try {
+      view3d = new Terrain3D($('terrain3d'), terrain, state, map);
+      document.body.classList.add('gl');
+    } catch (err) {
+      console.warn('3D terrain unavailable, using the 2D HUD view:', err.message);
+    }
+  }
   hud = new SuitHudOverlay($('hud'), terrain, state);
+  hud.view3d = view3d; // lets the HUD pin labels to the astronaut and rover in the 3D scene
+
+  // on-screen camera pad for the 3D view (mouse drag and wheel work too)
+  $('cam-controls').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-cam]');
+    if (!btn || !view3d) return;
+    const on = view3d.command(btn.dataset.cam);
+    if (btn.dataset.cam === 'orbit') btn.setAttribute('aria-pressed', String(on));
+    if (btn.dataset.cam === 'home') $('cam-controls').querySelector('[data-cam=orbit]').setAttribute('aria-pressed', 'false');
+    sfx.click();
+  });
   panel = new TelemetryPanel($('right'), state);
   profile = new ElevationProfile($('profile'), state);
 
@@ -527,8 +748,22 @@ async function boot() {
   $('clear').addEventListener('click', () => { state.waypoints = []; sfx.click(); recompute(false); });
   $('start').addEventListener('click', toggleSim);
   $('hud-start').addEventListener('click', toggleSim);
-  $('emergency').addEventListener('click', triggerEmergency);
-  $('hud-emergency').addEventListener('click', triggerEmergency);
+  $('emergency').addEventListener('click', () => triggerEmergency());
+  $('hud-emergency').addEventListener('click', () => triggerEmergency());
+  // auto-return has a switch in both views; they stay in step
+  const setAutoRtb = (on) => {
+    state.rtb.auto = on;
+    state.rtb.warned = false;
+    $('auto-rtb').checked = on;
+    $('hud-rtb').setAttribute('aria-pressed', String(on));
+    $('hud-rtb').textContent = t(on ? 'rtb.hudOn' : 'rtb.hudOff');
+    $('hud-rtb').classList.toggle('btn-off', !on);
+  };
+  $('auto-rtb').addEventListener('change', (e) => { setAutoRtb(e.target.checked); sfx.toggle(); });
+  $('hud-rtb').addEventListener('click', () => { setAutoRtb(!state.rtb.auto); sfx.toggle(); });
+  $('leak').addEventListener('change', (e) => { state.rtb.leak = e.target.checked; backClock = 0; sfx.toggle(); });
+  onLangChange(() => setAutoRtb(state.rtb.auto));
+  setAutoRtb(true);
   $('view-plan').addEventListener('click', () => setView('plan'));
   $('view-hud').addEventListener('click', () => setView('hud'));
   $('hud-visor').addEventListener('click', (e) => {
@@ -576,19 +811,25 @@ async function boot() {
 
   applyEnvironment(); // also plans the (empty) initial route
 
+  $('role').addEventListener('change', (e) => applyRole(e.target.value));
+  applyRole(savedRole(), false);
+
   // 60 FPS render loop
   let last = performance.now(), lastUi = 0;
   const frame = (now) => {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
     updateSim(dt);
-    map.draw(now);
+    if (state.view === 'hud' && view3d) view3d.draw(now);
+    else map.draw(now);
     if (state.view === 'hud') hud.draw(now);
     if (now - lastUi > 120) {
       lastUi = now;
       panel.updateLive();
       panel.updateEnvironment();
       profile.draw();
+      // red edge pulse on the stage while an automatic return is in progress
+      document.body.classList.toggle('rtb-active', !!state.route?.auto && state.sim.running);
       const chip = $('tile-status');
       // drives the chip through data-i18n so a language switch updates it too
       chip.dataset.i18n = map.tilesOnline ? 'tiles.online' : 'tiles.offline';
