@@ -2,7 +2,6 @@
 
 ![NASA Space Apps Challenge](https://img.shields.io/badge/NASA-Space%20Apps%20Challenge%202026-0b3d91?logo=nasa&logoColor=white)
 ![Build](https://github.com/Maxymax39/ares-nav-mars-eva/actions/workflows/deploy.yml/badge.svg)
-![License: MIT](https://img.shields.io/badge/License-MIT-00f3ff.svg)
 ![Version](https://img.shields.io/badge/version-v4.8.2--NASA-ffaa00)
 
 > Cartografía multicapa y navegación táctica para actividades extravehiculares (EVA) en el Cráter Jezero, Marte.
@@ -290,7 +289,4 @@ El audio de interfaz se sintetiza en tiempo real con Tone.js, por lo que no se i
 - [Registros diarios de temperatura atmosférica con Perseverance (MEDA)](https://science.nasa.gov/blog/daily-records-of-atmospheric-temperature-with-perseverance/)
 - [Variabilidad estacional y diurna de la presión en Jezero (arXiv:2511.09743)](https://arxiv.org/abs/2511.09743)
 - [Perseverance lee el registro de antiguos impactos en Marte (AGU)](https://news.agu.org/press-release/nasas-perseverance-rover-reads-record-of-ancient-mars-impacts/)
-
-## Licencia
-
-MIT. Imágenes HiRISE: NASA/JPL-Caltech/University of Arizona, vía NASA Mars Trek.
+  
