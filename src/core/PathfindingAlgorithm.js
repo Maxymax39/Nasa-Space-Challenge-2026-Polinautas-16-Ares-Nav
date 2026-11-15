@@ -224,5 +224,27 @@ export function emergencyReturn(terrain, from, opts = {}) {
   if (line.every((c) => !isBlocked(terrain, c, limits))) return { ok: true, cells: line, direct: true };
 
   const cells = findPath(terrain, start, goal, { limits, shortest: true });
-  return { ok: !!cells, cells: cells ?? [], direct: false };
+  return { ok: !!cells, cells: cells ? straighten(terrain, cells, limits) : [], direct: false };
+}
+
+/**
+ * Pull a grid path taut. On an 8-connected grid many zig-zag paths cost the
+ * same as the staircase, and A* is free to return any of them; nobody walks
+ * home like that. From each point, jump to the farthest later point that can
+ * be reached in a straight line over safe cells.
+ */
+function straighten(terrain, cells, limits) {
+  const out = [cells[0]];
+  let i = 0;
+  while (i < cells.length - 1) {
+    let j = cells.length - 1, line = null;
+    for (; j > i + 1; j--) {
+      const candidate = lineCells(terrain, cells[i], cells[j]);
+      if (candidate.every((c) => !isBlocked(terrain, c, limits))) { line = candidate; break; }
+    }
+    if (line) out.push(...line.slice(1));
+    else { j = i + 1; out.push(cells[j]); }
+    i = j;
+  }
+  return out;
 }

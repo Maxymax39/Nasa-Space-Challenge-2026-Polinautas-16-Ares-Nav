@@ -127,6 +127,21 @@ export class Terrain {
     return (Math.atan2(e, n) / DEG + 360) % 360;
   }
 
+  /** Elevation (m) interpolated between cell centres; used for meshes and contours. */
+  elevAt(lon, lat) {
+    const b = this.bounds;
+    const fx = ((lon - b.west) / (b.east - b.west)) * this.ncols - 0.5;
+    const fy = ((b.north - lat) / (b.north - b.south)) * this.nrows - 0.5;
+    const cx = Math.min(this.ncols - 1, Math.max(0, fx)), cy = Math.min(this.nrows - 1, Math.max(0, fy));
+    const c0 = Math.floor(cx), r0 = Math.floor(cy);
+    const c1 = Math.min(this.ncols - 1, c0 + 1), r1 = Math.min(this.nrows - 1, r0 + 1);
+    const kx = cx - c0, ky = cy - r0;
+    const e = this.elev, n = this.ncols;
+    const top = e[r0 * n + c0] * (1 - kx) + e[r0 * n + c1] * kx;
+    const bottom = e[r1 * n + c0] * (1 - kx) + e[r1 * n + c1] * kx;
+    return top * (1 - ky) + bottom * ky;
+  }
+
   /** Everything known about the cell under a coordinate. */
   sample(lon, lat) {
     const i = this.lonLatToCell(lon, lat);

@@ -23,6 +23,8 @@ export const SUIT = Object.freeze({
   radAlertMsvPerHour: 0.24,
   visorTransmission: 0.16, // counters ~57,000 lux Martian glare
   evaHours: [6, 8],
+  o2ReservePct: 10, // never planned for use; what is left on the hatch step
+  leakDrillPctPerHour: 22, // contingency drill: loss rate of a slow suit leak
 });
 
 /** Traverse modes. Speeds are planning assumptions, not standards. */
@@ -67,9 +69,9 @@ export function evaSafetyScore({ maxSlopeDeg, radiationMsv, o2DepletionPct }) {
 
 /** Qualitative band for a safety score. */
 export function classifySafety(score) {
-  if (score >= 75) return { level: 'nominal', label: 'NOMINAL', color: '#39ff14' };
-  if (score >= 50) return { level: 'caution', label: 'PRECAUCIÓN', color: '#ffaa00' };
-  return { level: 'danger', label: 'NO-GO', color: '#ff2255' };
+  if (score >= 75) return { level: 'nominal', label: 'NOMINAL', color: '#5fb878' };
+  if (score >= 50) return { level: 'caution', label: 'PRECAUCIÓN', color: '#e2a13a' };
+  return { level: 'danger', label: 'NO-GO', color: '#e5534b' };
 }
 
 /** Minimum in-helmet hydration for an EVA of the given duration (litres). */
@@ -90,6 +92,40 @@ export function traverseSpeedKmh(slopeDeg, costMultiplier = 1, mode = 'foot') {
 export function heartRateBpm(slopeDeg, costMultiplier = 1, moving = true) {
   if (!moving) return 72;
   return Math.round(clamp(88 + slopeDeg * 3.2 + (costMultiplier - 1) * 9, 60, 185));
+}
+
+/**
+ * Oxygen uptake (L/min, STPD) for a metabolic rate in watts.
+ * One litre of O2 releases about 20.1 kJ, so 1 L/min is roughly 335 W.
+ */
+export function o2UptakeLpm(metabolicW) {
+  return Math.max(0, metabolicW) / 335;
+}
+
+/**
+ * Point of Safe Return.
+ *
+ * Oxygen needed to walk home from here, using the same depletion model as the
+ * rest of the suit budget so the prediction matches what the simulation will
+ * actually burn: distance, any steeper slope still ahead on the way back, and
+ * whatever a leak takes during the walk. The crew must turn around while
+ * remaining O2 still covers that plus the reserve.
+ *
+ * @param {object} p
+ * @param {number} p.o2Pct            O2 remaining now (%)
+ * @param {number} p.returnKm         length of the safe path to the habitat
+ * @param {number} p.returnMaxSlope   steepest slope on that path (deg)
+ * @param {number} p.maxSlopeSoFar    steepest slope already climbed (deg)
+ * @param {number} p.returnHours      walking time for that path
+ * @param {number} [p.leakPctPerHour] extra loss rate, e.g. a suit leak
+ */
+export function pointOfSafeReturn({ o2Pct, returnKm, returnMaxSlope, maxSlopeSoFar, returnHours, leakPctPerHour = 0 }) {
+  const needPct = returnKm * 4.2
+    + Math.max(0, returnMaxSlope - maxSlopeSoFar) * 0.8
+    + leakPctPerHour * returnHours;
+  const reservePct = SUIT.o2ReservePct;
+  const marginPct = o2Pct - needPct - reservePct;
+  return { needPct, reservePct, marginPct, returnKm, returnHours, critical: marginPct <= 0 };
 }
 
 /** Full biomedical summary for a planned route. */
