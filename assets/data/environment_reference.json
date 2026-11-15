@@ -1,0 +1,56 @@
+{
+  "meta": {
+    "name": "Jezero - surface environment reference values and scenarios",
+    "kind": "REFERENCE + MODELED",
+    "note": "Temperature ranges are measured values reported for MEDA on Perseverance. Pressure, dust, wind and radiation-factor values are approximate planning values or hypothetical scenarios, flagged per field. The diurnal curves, visibility and illumination are simple models in src/core/EnvironmentModel.js, not measurements."
+  },
+  "sources": [
+    { "id": "meda-temp", "title": "Daily Records of Atmospheric Temperature with Perseverance (NASA Science blog, MEDA)", "url": "https://science.nasa.gov/blog/daily-records-of-atmospheric-temperature-with-perseverance/" },
+    { "id": "meda-pressure", "title": "Seasonal and Diurnal Variability of Atmospheric Pressure in Jezero Crater, Mars, from MEDA Measurements (arXiv:2511.09743, not peer-reviewed)", "url": "https://arxiv.org/abs/2511.09743" },
+    { "id": "jezero-rim", "title": "NASA's Perseverance rover reads record of ancient Mars impacts (AGU press release; geology context, dust devil imaged at Jezero)", "url": "https://news.agu.org/press-release/nasas-perseverance-rover-reads-record-of-ancient-mars-impacts/" }
+  ],
+  "temperature": {
+    "status": "measured (MEDA)",
+    "airMinC": -83,
+    "airMaxC": -23,
+    "groundMinC": -83,
+    "groundMaxC": 5,
+    "airPeakHour": 14,
+    "groundPeakHour": 13
+  },
+  "pressure": {
+    "status": "approximate planning value; arXiv:2511.09743 describes the seasonal and diurnal behaviour (larger diurnal swings than Gale, dust-related thermal tides) but its abstract gives no figures",
+    "meanPa": 730,
+    "diurnalAmpPa": 10,
+    "dustTideAmpPaPerTau": 8,
+    "maxAmpPa": 45
+  },
+  "dust": {
+    "status": "approximate planning values",
+    "scaleHeightKm": 11,
+    "liftingWindMs": 18,
+    "liftingTauPerMs": 0.08,
+    "clearSkyLux": 57000
+  },
+  "radiation": {
+    "status": "hypothetical scenario multipliers applied to the modeled dose-rate field",
+    "factors": { "quiet": 1.0, "active": 1.6, "spe": 3.0 }
+  },
+  "limits": {
+    "status": "planning thresholds chosen for this project, not a NASA standard",
+    "tauCaution": 1.5,
+    "tauNoGo": 3.0,
+    "visibilityNoGoKm": 12,
+    "windCautionMs": 15,
+    "windNoGoMs": 25,
+    "coldCautionC": -75,
+    "darkLux": 800
+  },
+  "presets": {
+    "nominal": { "tau": 0.4, "windSpeed": 5, "windDir": 300, "startHour": 9, "spaceWeather": "quiet" },
+    "dusty": { "tau": 1.2, "windSpeed": 10, "windDir": 290, "startHour": 9, "spaceWeather": "quiet" },
+    "regional": { "tau": 2.5, "windSpeed": 17, "windDir": 280, "startHour": 10, "spaceWeather": "quiet" },
+    "global": { "tau": 5.5, "windSpeed": 24, "windDir": 270, "startHour": 10, "spaceWeather": "quiet" },
+    "spe": { "tau": 0.5, "windSpeed": 5, "windDir": 300, "startHour": 9, "spaceWeather": "spe" }
+  }
+}
