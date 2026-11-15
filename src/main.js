@@ -10,6 +10,7 @@ import {
   evaSummary, suitO2Depletion, evaSafetyScore, evaHydrationL, traverseSpeedKmh, heartRateBpm, SUIT,
 } from './core/BioSafetyCalculators.js';
 import { unlockAudio, setMuted, sfx } from './core/AudioFeedback.js';
+import { t, tr, applyI18n, getLang, setLang, onLangChange } from './core/i18n.js';
 import { MapEngine } from './components/MapEngine.js';
 import { SuitHudOverlay } from './components/SuitHudOverlay.js';
 import { TelemetryPanel } from './components/TelemetryPanel.js';
@@ -54,7 +55,7 @@ function closePopup() { $('popup').hidden = true; }
 
 function openPopup(html, at) {
   const el = $('popup');
-  el.innerHTML = `<button class="close" aria-label="Cerrar">✕</button>${html}`;
+  el.innerHTML = `<button class="close" aria-label="${t('popup.close')}">✕</button>${html}`;
   el.hidden = false;
   const stage = $('stage');
   el.style.left = `${Math.max(8, Math.min(stage.clientWidth - 286, at.x + 14))}px`;
@@ -98,17 +99,21 @@ function recompute(playSound = true) {
     const labels = ['HAB', ...state.waypoints.map((_, i) => `WP${i + 1}`), ...(state.roundTrip ? ['HAB'] : [])];
     const plan = planRoute(terrain, stops);
     if (!plan.ok) {
-      state.routeError = `Sin ruta segura hacia ${labels[plan.failedLeg]}: el terreno intermedio supera ${LIMITS.maxSlopeDeg}° o ${LIMITS.maxRadMsvPerHour} mSv/h.`;
+      // messages are stored as {key, vars} so they follow the interface language
+      state.routeError = {
+        key: 'route.error',
+        vars: { wp: labels[plan.failedLeg], slope: LIMITS.maxSlopeDeg, rad: LIMITS.maxRadMsvPerHour },
+      };
       if (playSound) sfx.blocked();
     } else {
       const analysis = analyzeRoute(terrain, plan.cells, state.mode);
       const summary = evaSummary(analysis);
       const notes = [];
-      if (summary.o2DepletionPct >= 100) notes.push('O₂ insuficiente para esta ruta.');
-      if (summary.exceedsEvaWindow) notes.push(`Supera la ventana EVA de ${SUIT.evaHours[1]} h.`);
-      if (!notes.length) notes.push('Ruta libre de celdas >20° y >0.24 mSv/h.');
+      if (summary.o2DepletionPct >= 100) notes.push({ key: 'note.o2' });
+      if (summary.exceedsEvaWindow) notes.push({ key: 'note.window', vars: { h: SUIT.evaHours[1] } });
+      if (!notes.length) notes.push({ key: 'note.clear' });
       state.route = {
-        ...analysis, summary, kind: 'plan', note: notes.join(' '),
+        ...analysis, summary, kind: 'plan', notes,
         wpMarks: waypointMarks(analysis.points, plan.wpCells, labels),
       };
       if (playSound) sfx.route();
@@ -121,27 +126,27 @@ function recompute(playSound = true) {
 
 function addWaypoint(p) {
   if (!terrain.inBounds(p.lon, p.lat)) {
-    toast('Fuera del área cartografiada.');
+    toast(t('toast.outOfBounds'));
     return;
   }
   const raw = terrain.lonLatToCell(p.lon, p.lat);
   const safe = nearestPassable(terrain, raw);
   if (safe === -1) {
-    toast('Zona intransitable: no hay celda segura cercana.', true);
+    toast(t('toast.noSafeCell'), true);
     sfx.blocked();
     return;
   }
   if (safe !== raw) {
     const why = terrain.slope[raw] > LIMITS.maxSlopeDeg
-      ? `pendiente ${terrain.slope[raw].toFixed(0)}° > ${LIMITS.maxSlopeDeg}°`
-      : `radiación ${terrain.rad[raw].toFixed(2)} > ${LIMITS.maxRadMsvPerHour} mSv/h`;
-    toast(`Celda bloqueada (${why}). Waypoint reubicado a la celda segura más cercana.`);
+      ? t('why.slope', { v: terrain.slope[raw].toFixed(0), max: LIMITS.maxSlopeDeg })
+      : t('why.rad', { v: terrain.rad[raw].toFixed(2), max: LIMITS.maxRadMsvPerHour });
+    toast(t('toast.snapped', { why }));
     p = terrain.cellToLonLat(safe);
   }
   state.waypoints.push({ lon: p.lon, lat: p.lat });
   sfx.waypoint();
   recompute(false);
-  if (state.routeError) toast(state.routeError, true);
+  if (state.routeError) toast(t(state.routeError.key, state.routeError.vars), true);
 }
 
 function suggestedRoute() {
@@ -167,12 +172,12 @@ function triggerEmergency() {
   } else if (state.waypoints.length) {
     from = state.waypoints[state.waypoints.length - 1];
   } else {
-    toast('No hay EVA en curso: el astronauta está en el hábitat.');
+    toast(t('toast.noEva'));
     return;
   }
   const ret = emergencyReturn(terrain, from);
   if (!ret.ok) {
-    toast('No existe trayecto seguro al hábitat desde esta posición.', true);
+    toast(t('toast.noReturn'), true);
     sfx.blocked();
     return;
   }
@@ -183,9 +188,7 @@ function triggerEmergency() {
     summary: evaSummary(analysis),
     kind: 'emergency',
     emergencyIndex: Math.max(0, startIndex - 1),
-    note: ret.direct
-      ? 'Línea recta segura hacia Octavia E. Butler.'
-      : 'Línea recta bloqueada: desvío seguro más corto hacia Octavia E. Butler.',
+    notes: [{ key: ret.direct ? 'note.direct' : 'note.detour' }],
     wpMarks: [{ label: 'HAB', index: analysis.points.length - 1, distKm: analysis.distanceKm }],
   };
   state.routeError = null;
@@ -194,7 +197,7 @@ function triggerEmergency() {
   s.pos = { lon: analysis.points[s.index].lon, lat: analysis.points[s.index].lat };
   s.running = true;
   sfx.emergency();
-  toast(`REGRESO DE EMERGENCIA · ${(analysis.distanceKm - s.km).toFixed(2)} km al hábitat`, true);
+  toast(t('toast.emergency', { km: (analysis.distanceKm - s.km).toFixed(2) }), true);
   panel.updateRoute();
   syncStartButtons();
 }
@@ -202,14 +205,14 @@ function triggerEmergency() {
 /* ---------- EVA simulation ---------- */
 
 function syncStartButtons() {
-  const label = state.sim.running ? '❚❚ Pausar EVA' : state.sim.km > 0 ? '▶ Reanudar EVA' : '▶ Iniciar EVA';
-  $('start').textContent = label;
-  $('hud-start').textContent = label.replace(' EVA', '');
+  const key = state.sim.running ? 'sim.pause' : state.sim.km > 0 ? 'sim.resume' : 'sim.start';
+  $('start').textContent = t(key);
+  $('hud-start').textContent = t(`${key}Short`);
 }
 
 function toggleSim() {
   if (!state.route) {
-    toast('Primero traza una ruta (o usa "Ruta científica sugerida").');
+    toast(t('toast.needRoute'));
     return;
   }
   const s = state.sim;
@@ -241,7 +244,7 @@ function updateSim(dtSec) {
       s.km = route.distanceKm;
       s.running = false;
       sfx.arrive();
-      toast(route.kind === 'emergency' ? 'Astronauta a salvo en el hábitat.' : 'EVA completada.');
+      toast(t(route.kind === 'emergency' ? 'toast.safe' : 'toast.done'));
       syncStartButtons();
     }
   }
@@ -287,24 +290,24 @@ function updateSim(dtSec) {
 function evaluateAlert(here, pts) {
   const zoneOf = (id) => terrain.hazards.zones.find((z) => z.id === id);
   if (here.rad > 0.2) {
-    return { level: 'danger', title: 'RADIACIÓN ELEVADA', detail: `${here.rad.toFixed(2)} mSv/h — límite ${SUIT.radAlertMsvPerHour} mSv/h` };
+    return { level: 'danger', title: t('alert.rad.title'), detail: t('alert.rad.detail', { v: here.rad.toFixed(2), max: SUIT.radAlertMsvPerHour }) };
   }
   if (here.slope > 15) {
-    return { level: 'danger', title: 'PENDIENTE INESTABLE', detail: `${here.slope.toFixed(0)}° — riesgo de deslizamiento (límite ${LIMITS.maxSlopeDeg}°)` };
+    return { level: 'danger', title: t('alert.slope.title'), detail: t('alert.slope.detail', { v: here.slope.toFixed(0), max: LIMITS.maxSlopeDeg }) };
   }
   if (here.zoneId) {
     const z = zoneOf(here.zoneId);
-    return { level: 'danger', title: `ZONA ${z.id} · ${z.name.toUpperCase()}`, detail: z.risk };
+    return { level: 'danger', title: t('alert.zone.title', { id: z.id, name: tr(z, 'name').toUpperCase() }), detail: tr(z, 'risk') };
   }
   // look ahead 150 m along the route
   for (let i = state.sim.index + 1; i < pts.length && pts[i].distKm - here.distKm <= 0.15; i++) {
     const m = Math.round((pts[i].distKm - here.distKm) * 1000);
-    if (pts[i].slope > 15) return { level: 'caution', title: 'PENDIENTE PRONUNCIADA', detail: `${pts[i].slope.toFixed(0)}° a ${m} m en ruta` };
-    if (pts[i].zoneId) return { level: 'caution', title: `ZONA ${pts[i].zoneId} EN RUTA`, detail: `${zoneOf(pts[i].zoneId).name} a ${m} m` };
+    if (pts[i].slope > 15) return { level: 'caution', title: t('alert.aheadSlope.title'), detail: t('alert.aheadSlope.detail', { v: pts[i].slope.toFixed(0), m }) };
+    if (pts[i].zoneId) return { level: 'caution', title: t('alert.aheadZone.title', { id: pts[i].zoneId }), detail: t('alert.aheadZone.detail', { name: tr(zoneOf(pts[i].zoneId), 'name'), m }) };
   }
   const near = terrain.nearestZone(here);
   if (near && near.edgeKm < 0.12) {
-    return { level: 'caution', title: `PROXIMIDAD ZONA ${near.zone.id}`, detail: `${near.zone.name} a ${Math.max(0, Math.round(near.edgeKm * 1000))} m` };
+    return { level: 'caution', title: t('alert.near.title', { id: near.zone.id }), detail: t('alert.aheadZone.detail', { name: tr(near.zone, 'name'), m: Math.max(0, Math.round(near.edgeKm * 1000)) }) };
   }
   return { level: 'none' };
 }
@@ -356,28 +359,28 @@ function showMarker(marker, at) {
   const d = marker.data;
   if (marker.type === 'zone') {
     openPopup(`
-      <h3>Z${d.id} · ${d.name}</h3>
-      <p><b>Riesgo:</b> ${d.risk}</p>
-      <p><b>Mitigación:</b> ${d.mitigation}</p>
-      <p><b>Vista en superficie:</b> ${d.pov}.<br>
-      <a href="${RAW_IMAGES_URL}" target="_blank" rel="noopener">Imágenes crudas de Mars 2020 ↗</a></p>`, at);
+      <h3>Z${d.id} · ${tr(d, 'name')}</h3>
+      <p><b>${t('popup.risk')}</b> ${tr(d, 'risk')}</p>
+      <p><b>${t('popup.mitigation')}</b> ${tr(d, 'mitigation')}</p>
+      <p><b>${t('popup.pov')}</b> ${tr(d, 'pov')}.<br>
+      <a href="${RAW_IMAGES_URL}" target="_blank" rel="noopener">${t('popup.rawImages')}</a></p>`, at);
   } else if (marker.type === 'mineral') {
     const cls = terrain.minerals.classes[d.class];
     const el = openPopup(`
-      <h3 style="color:${cls.color}">${d.name}</h3>
-      <p><b>${cls.label}</b> · bandas CRISM ${cls.bands}</p>
-      <p><b>Potencial de biofirmas:</b> ${cls.biosignature}</p>
+      <h3 style="color:${cls.color}">${tr(d, 'name')}</h3>
+      <p><b>${tr(cls, 'label')}</b> · ${t('popup.bands')} ${cls.bands}</p>
+      <p><b>${t('popup.bio')}</b> ${tr(cls, 'biosignature')}</p>
       <p>${fmtCoord(d)}</p>
-      <button class="btn btn-green" data-add>+ Añadir como waypoint</button>`, at);
+      <button class="btn btn-green" data-add>${t('popup.addWp')}</button>`, at);
     el.querySelector('[data-add]').addEventListener('click', () => addWaypoint(d));
   } else if (marker.type === 'rad') {
     openPopup(`
-      <h3 style="color:#ff2255">☢ ${d.name}</h3>
-      <p>Pico modelado de <b>${d.peakMsvPerHour.toFixed(2)} mSv/h</b> (escenario SPE). Las celdas sobre ${LIMITS.maxRadMsvPerHour} mSv/h son intransitables.</p>`, at);
+      <h3 style="color:#ff2255">☢ ${tr(d, 'name')}</h3>
+      <p>${t('popup.radBody', { peak: d.peakMsvPerHour.toFixed(2), max: LIMITS.maxRadMsvPerHour })}</p>`, at);
   } else {
     openPopup(`
       <h3>Octavia E. Butler Landing</h3>
-      <p>Hábitat y punto de inicio/retorno de toda EVA.</p>
+      <p>${t('popup.habBody')}</p>
       <p>${fmtCoord(d)}</p>`, at);
   }
   sfx.click();
@@ -395,7 +398,7 @@ async function boot() {
     onHover: (p) => {
       if (!p || !terrain.inBounds(p.lon, p.lat)) { $('coords').textContent = '—'; return; }
       const c = terrain.sample(p.lon, p.lat);
-      const flag = isBlocked(terrain, c.cell) ? ' · BLOQUEADA' : '';
+      const flag = isBlocked(terrain, c.cell) ? ` · ${t('coords.blocked')}` : '';
       $('coords').textContent = `${fmtCoord(p)} · ${c.elev.toFixed(0)} m · ${c.slope.toFixed(1)}° · ${c.rad.toFixed(3)} mSv/h${flag}`;
     },
   });
@@ -403,10 +406,27 @@ async function boot() {
   panel = new TelemetryPanel($('right'), state);
   profile = new ElevationProfile($('profile'), state);
 
-  // hazard list
-  $('zone-list').innerHTML = terrain.hazards.zones
-    .map((z) => `<li><button data-zone="${z.id}"><span class="num">Z${z.id}</span><span>${z.name}<small>${z.risk}</small></span></button></li>`)
-    .join('');
+  // hazard list (re-rendered on language change)
+  const renderZoneList = () => {
+    $('zone-list').innerHTML = terrain.hazards.zones
+      .map((z) => `<li><button data-zone="${z.id}"><span class="num">Z${z.id}</span><span>${tr(z, 'name')}<small>${tr(z, 'risk')}</small></span></button></li>`)
+      .join('');
+  };
+  renderZoneList();
+
+  // language dropdown: static text is handled by applyI18n(); the rest is refreshed here
+  const visorLabel = () => { $('hud-visor').textContent = t(state.visorOn ? 'visor.closed' : 'visor.open'); };
+  applyI18n();
+  $('lang').value = getLang();
+  $('lang').addEventListener('change', (e) => { setLang(e.target.value); sfx.toggle(); });
+  onLangChange(() => {
+    closePopup();
+    $('toast').hidden = true;
+    renderZoneList();
+    syncStartButtons();
+    visorLabel();
+  });
+
   $('zone-list').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-zone]');
     if (!btn) return;
@@ -436,7 +456,7 @@ async function boot() {
     state.visorOn = !state.visorOn;
     document.body.classList.toggle('visor-open', !state.visorOn);
     e.currentTarget.setAttribute('aria-pressed', String(state.visorOn));
-    e.currentTarget.textContent = state.visorOn ? 'Visor 16%' : 'Visor abierto';
+    visorLabel();
     sfx.toggle();
   });
   $('mute').addEventListener('click', (e) => {
@@ -469,7 +489,9 @@ async function boot() {
       panel.updateLive();
       profile.draw();
       const chip = $('tile-status');
-      chip.textContent = map.tilesOnline ? 'HiRISE 25 cm · NASA Mars Trek' : 'HiRISE sin conexión · relieve local';
+      // drives the chip through data-i18n so a language switch updates it too
+      chip.dataset.i18n = map.tilesOnline ? 'tiles.online' : 'tiles.offline';
+      chip.textContent = t(chip.dataset.i18n);
       chip.classList.toggle('ok', map.tilesOnline);
     }
     requestAnimationFrame(frame);
@@ -481,6 +503,6 @@ boot().catch((err) => {
   console.error(err);
   document.body.insertAdjacentHTML(
     'beforeend',
-    `<div class="toast red" style="top:60px">Error al iniciar ARES-NAV: ${err.message}. Sirve la carpeta con un servidor local (ver README).</div>`,
+    `<div class="toast red" style="top:60px">${t('boot.error', { msg: err.message })}</div>`,
   );
 });
