@@ -102,6 +102,15 @@ select, input[type='number'] {
   font: inherit;
 }
 select:focus-visible, input:focus-visible, button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
+.field-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.field-row b { color: #f8fafc; font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+input[type='range'] { width: 100%; accent-color: var(--cyan); height: 16px; cursor: pointer; }
+.env-status { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.env-badge { font-size: 12px; font-weight: 800; letter-spacing: 0.12em; padding: 3px 8px; border: 1px solid currentColor; border-radius: 3px; }
+.env-reasons { font-size: 10px; line-height: 1.5; color: #cbd5e1; margin-bottom: 10px; }
+.env-reasons li.nogo { color: var(--red); }
+.env-reasons li.caution { color: var(--amber); }
+.metrics dd small { display: block; font-size: 9px; font-weight: 500; color: #94a3b8; }
 .inline-inputs { display: flex; gap: 10px; margin-bottom: 8px; font-size: 10px; color: #94a3b8; }
 .inline-inputs label { display: flex; flex-direction: column; gap: 4px; flex: 1; }
 .inline-inputs input { width: 100%; }
