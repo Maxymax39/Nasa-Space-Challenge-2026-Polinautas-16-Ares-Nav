@@ -2,15 +2,15 @@
   "meta": {
     "name": "Jezero - marcadores de riesgo geológico y escenario de radiación",
     "kind": "MODELED",
-    "note": "Zone positions follow the modeled DEM. The radiation baseline is the MSL/RAD surface average (~0.67 mSv/day); the hotspots are a hypothetical solar particle event (SPE) exposure scenario for planning exercises, not a measurement."
+    "note": "Zone positions follow the modeled DEM. The radiation baseline is the MSL/RAD surface average (~0.67 mSv/day); the hotspots are a hypothetical solar particle event (SPE) exposure scenario for planning exercises, not a measurement. Fields ending in _en are the English text shown when the interface language is English."
   },
   "habitat": { "name": "Octavia E. Butler Landing", "lon": 77.4508, "lat": 18.4447 },
   "radiation": {
     "baselineMsvPerHour": 0.028,
     "limitMsvPerHour": 0.24,
     "hotspots": [
-      { "id": "spe-ne", "name": "Exposición SPE - llanura noreste", "lon": 77.4687, "lat": 18.4976, "radiusKm": 0.55, "peakMsvPerHour": 0.34 },
-      { "id": "spe-sw", "name": "Exposición SPE - llanura sur", "lon": 77.3762, "lat": 18.4284, "radiusKm": 0.45, "peakMsvPerHour": 0.30 }
+      { "id": "spe-ne", "name": "Exposición SPE - llanura noreste", "name_en": "SPE exposure - north-east plain", "lon": 77.4687, "lat": 18.4976, "radiusKm": 0.55, "peakMsvPerHour": 0.34 },
+      { "id": "spe-sw", "name": "Exposición SPE - llanura sur", "name_en": "SPE exposure - southern plain", "lon": 77.3762, "lat": 18.4284, "radiusKm": 0.45, "peakMsvPerHour": 0.30 }
     ]
   },
   "zones": [
@@ -18,31 +18,51 @@
       "id": 1, "name": "Frente del Delta", "type": "slope", "lon": 77.4322, "lat": 18.4942, "radiusKm": 0.35, "costMultiplier": 1.0,
       "risk": "Pendientes abruptas (>20°) con riesgo de deslizamiento",
       "mitigation": "Ascender solo por la rampa aluvial; el motor bloquea toda celda con pendiente >20°.",
-      "pov": "Perseverance, Hawksbill Gap / frente del delta, soles 420-470"
+      "pov": "Perseverance, Hawksbill Gap / frente del delta, soles 420-470",
+      "name_en": "Delta Front",
+      "risk_en": "Steep slopes (>20°) with landslide risk",
+      "mitigation_en": "Climb only by the alluvial ramp; the engine blocks every cell steeper than 20°.",
+      "pov_en": "Perseverance, Hawksbill Gap / delta front, sols 420-470"
     },
     {
       "id": 2, "name": "Borde Occidental / Neretva Vallis", "type": "loose", "lon": 77.3478, "lat": 18.4925, "radiusKm": 0.60, "costMultiplier": 3.0,
       "risk": "Suelo muy suelto y material no consolidado",
       "mitigation": "Evitar el piso del canal; costo de travesía x3.",
-      "pov": "Perseverance, Neretva Vallis / Bright Angel, soles 1170-1220"
+      "pov": "Perseverance, Neretva Vallis / Bright Angel, soles 1170-1220",
+      "name_en": "Western Rim / Neretva Vallis",
+      "risk_en": "Very loose soil and unconsolidated material",
+      "mitigation_en": "Avoid the channel floor; traverse cost x3.",
+      "pov_en": "Perseverance, Neretva Vallis / Bright Angel, sols 1170-1220"
     },
     {
       "id": 3, "name": "Piso del Cráter (dunas Séítah)", "type": "sand", "lon": 77.4402, "lat": 18.4748, "radiusKm": 0.75, "costMultiplier": 4.0,
       "risk": "Campos de dunas y trampas de arena fina profunda",
       "mitigation": "Rodear por piso compacto; costo de travesía x4.",
-      "pov": "Perseverance, borde de Séítah, soles 200-290"
+      "pov": "Perseverance, borde de Séítah, soles 200-290",
+      "name_en": "Crater Floor (Séítah dunes)",
+      "risk_en": "Dune fields and deep fine-sand traps",
+      "mitigation_en": "Go around on compact floor; traverse cost x4.",
+      "pov_en": "Perseverance, edge of Séítah, sols 200-290"
     },
     {
       "id": 4, "name": "Unión Canal / Llanura", "type": "boulders", "lon": 77.4340, "lat": 18.4504, "radiusKm": 0.40, "costMultiplier": 2.5,
       "risk": "Bloques de basalto afilados que erosionan articulaciones y neumáticos",
       "mitigation": "Seguir el corredor intermedio de roca firme; costo de travesía x2.5.",
-      "pov": "Perseverance, piso del cráter (Máaz), soles 100-180"
+      "pov": "Perseverance, piso del cráter (Máaz), soles 100-180",
+      "name_en": "Channel / Plain Junction",
+      "risk_en": "Sharp basalt blocks that wear down suit joints and tyres",
+      "mitigation_en": "Follow the middle corridor of firm rock; traverse cost x2.5.",
+      "pov_en": "Perseverance, crater floor (Máaz), sols 100-180"
     },
     {
       "id": 5, "name": "Cráter Secundario Suroeste (Belva)", "type": "unstable", "lon": 77.3805, "lat": 18.4807, "radiusKm": 0.60, "costMultiplier": 5.0,
       "risk": "Bordes inestables y fracturas estructurales",
       "mitigation": "Mantener distancia del borde; costo de travesía x5.",
-      "pov": "Perseverance, cráter Belva, soles 770-790"
+      "pov": "Perseverance, cráter Belva, soles 770-790",
+      "name_en": "South-West Secondary Crater (Belva)",
+      "risk_en": "Unstable rims and structural fractures",
+      "mitigation_en": "Keep away from the rim; traverse cost x5.",
+      "pov_en": "Perseverance, Belva crater, sols 770-790"
     }
   ]
 }
