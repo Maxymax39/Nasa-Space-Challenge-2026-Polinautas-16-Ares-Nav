@@ -57,8 +57,9 @@ y los JSON no cargan desde `file://`.
 | **CRISM Spectral** | MRO CRISM (filosilicatos Fe/Mg, carbonatos, sulfatos polihidratados, sílice hidratada) | **Modelado.** `assets/data/crism_minerals.json` simplifica la cartografía mineral publicada del delta; posiciones aproximadas |
 | **RAD Danger Overlay** | MSL RAD: dosis media en superficie ≈ 0.67 mSv/día (≈ 0.028 mSv/h) | **Línea base real, focos hipotéticos.** Los dos focos > 0.24 mSv/h son un escenario de evento de partículas solares (SPE) para ejercitar el motor |
 
-Fuentes previstas pero **aún no integradas**: **MAVEN** (flujo de partículas energéticas solares, para alimentar el
-escenario SPE con datos reales) y **MEDA** de Perseverance (temperatura, viento y polvo en superficie).
+De **MEDA** (Perseverance) se usan los rangos de temperatura publicados; ver *Ambiente marciano*. Siguen
+**sin integrar** como series de datos: **MAVEN** (flujo de partículas energéticas solares, para alimentar el
+escenario SPE con datos reales) y las mediciones de viento, presión y polvo de MEDA.
 
 Para usar topografía real, remuestrea el DTM `JEZ_hirise_soc_006_DTM_MOLAtopography_DeltaGeoid_1m` a la misma
 malla y sustituye el arreglo `elevations` del JSON; el resto del sistema no cambia.
