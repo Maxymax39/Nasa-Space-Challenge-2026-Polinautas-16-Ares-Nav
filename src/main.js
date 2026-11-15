@@ -700,6 +700,7 @@ async function boot() {
     if (!btn || !view3d) return;
     const on = view3d.command(btn.dataset.cam);
     if (btn.dataset.cam === 'orbit') btn.setAttribute('aria-pressed', String(on));
+    if (btn.dataset.cam === 'wind') btn.setAttribute('aria-pressed', String(view3d.windOn));
     if (btn.dataset.cam === 'home') $('cam-controls').querySelector('[data-cam=orbit]').setAttribute('aria-pressed', 'false');
     sfx.click();
   });
