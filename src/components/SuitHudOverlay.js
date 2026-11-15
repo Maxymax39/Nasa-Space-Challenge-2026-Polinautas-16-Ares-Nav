@@ -59,6 +59,7 @@ export class SuitHudOverlay {
     this.#suitColumn(state.telemetry);
     this.#navColumn(state.telemetry, state.nav);
     this.#radar(now);
+    this.#windRose(state.envNow, state.sim.heading);
     this.#footer(state);
     this.#badges(state);
     this.#alert(state.alert, now);
@@ -351,6 +352,57 @@ export class SuitHudOverlay {
     this.#text(state.visorOn ? L('hud.visorOn', { pct: Math.round(SUIT.visorTransmission * 100) }) : L('hud.visorOff'), x, h - 54, { align: 'right', size: 10, color: state.visorOn ? C.cyan : C.amber, weight: 500 });
     if (state.envNow) this.#text(L('hud.ltst', { time: formatHour(state.envNow.hour) }), x, h - 92, { align: 'right', size: 10, weight: 500 });
     this.#text(L('hud.link'), x, h - 38, { align: 'right', size: 10, weight: 500 });
+  }
+
+  /**
+   * Wind vector rose, beside the radar and heading-up like it. The arrow
+   * points the way the dust is travelling relative to the direction of
+   * travel; the figures give speed, source bearing and the head/cross split.
+   */
+  #windRose(v, heading) {
+    if (!v) return;
+    const { ctx, w, h } = this;
+    const R = Math.min(92, h * 0.14), r = 30;
+    const cx = Math.max(28, w * 0.07) + 2 * R + 26 + r, cy = h - r - 98; // clear of the camera pad
+    const color = v.windSpeed >= 25 ? C.red : v.windSpeed >= 15 ? C.amber : C.cyan;
+
+    ctx.save();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(17,19,21,0.72)';
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    // tick at the top marks the direction of travel
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - r);
+    ctx.lineTo(cx, cy - r + 6);
+    ctx.stroke();
+
+    if (v.windSpeed >= 1) {
+      ctx.translate(cx, cy);
+      ctx.rotate(((v.windDir + 180 - heading) * Math.PI) / 180);
+      const len = 10 + Math.min(14, v.windSpeed * 0.5); // longer arrow, stronger wind
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(0, -len);
+      ctx.lineTo(6, -len + 10);
+      ctx.lineTo(2, -len + 10);
+      ctx.lineTo(2, len);
+      ctx.lineTo(-2, len);
+      ctx.lineTo(-2, -len + 10);
+      ctx.lineTo(-6, -len + 10);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+
+    const tx = cx + r + 10;
+    this.#text(L('hud.windRose'), tx, cy - 20, { size: 10, weight: 500 });
+    this.#text(`${v.windSpeed.toFixed(0)} m/s`, tx, cy - 4, { size: 16, color: '#ffffff', weight: 800 });
+    this.#text(L('hud.windFrom', { dir: String(v.windDir).padStart(3, '0') }), tx, cy + 13, { size: 10, color, weight: 600 });
   }
 
   /** Tags pinned to the astronaut and the rover in the 3D scene: who is who, and how they are doing. */

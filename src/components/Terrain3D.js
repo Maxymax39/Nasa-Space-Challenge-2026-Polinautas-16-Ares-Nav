@@ -17,6 +17,7 @@ const VERTICAL_EXAGGERATION = 2;
 const MESH_DETAIL = 2; // mesh vertices per DEM cell, per axis
 const FOV_HALF_ANGLE = (30 * Math.PI) / 180;
 const FOV_RANGE_KM = 0.2;
+const WIND_STREAKS = 900;
 const CAMERA_HOME = { yaw: 0, pitch: 24, dist: 0.45 };
 const DEG = Math.PI / 180;
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -66,6 +67,7 @@ export class Terrain3D {
     this.#buildTerrain(THREE);
     this.#buildLights(THREE);
     this.#buildMarkers(THREE);
+    this.#buildWind(THREE);
     this.#bindCamera();
     this.resize();
   }
@@ -197,6 +199,64 @@ export class Terrain3D {
     };
   }
 
+  /**
+   * Wind-blown dust: short streaks that drift downwind and follow the ground.
+   * They live in a box around the astronaut and wrap at its edges, so the
+   * stream looks endless without tracking particles across the whole map.
+   */
+  #buildWind(THREE) {
+    this.windOn = true;
+    this.windSeeds = new Float32Array(WIND_STREAKS * 3); // x, z in -1..1 of the box; y in 0..1 of its height
+    for (let i = 0; i < this.windSeeds.length; i += 3) {
+      this.windSeeds[i] = Math.random() * 2 - 1;
+      this.windSeeds[i + 1] = Math.random() ** 2; // most of the dust stays low
+      this.windSeeds[i + 2] = Math.random() * 2 - 1;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(WIND_STREAKS * 6), 3));
+    this.wind = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
+      color: 0xecd2ad, transparent: true, opacity: 0.5, depthWrite: false,
+    }));
+    this.wind.frustumCulled = false;
+    this.scene.add(this.wind);
+  }
+
+  #updateWind(dt, env, centre) {
+    const blowing = this.windOn && env && env.windSpeed >= 1;
+    this.wind.visible = !!blowing;
+    if (!blowing) return;
+
+    const t = this.terrain, b = t.bounds;
+    // windDir is where the wind comes from; dust travels the opposite way
+    const toward = (env.windDir + 180) * DEG;
+    const vx = Math.sin(toward), vz = -Math.cos(toward);
+    const box = clamp(this.cam.dist * 1.6, 0.4, 3); // half-width of the particle box, km
+    const tall = 0.012 + 0.05 * box;
+    // Drawn about four times faster than true scale; at real speed a 5 m/s
+    // breeze would take minutes to cross the view and read as still air.
+    const step = (env.windSpeed * 0.004 * dt) / box;
+    const len = 0.004 + env.windSpeed * 0.0012;
+    const active = Math.min(WIND_STREAKS, Math.round(90 + env.windSpeed * 20 + env.tau * 45));
+
+    const seeds = this.windSeeds, pos = this.wind.geometry.attributes.position.array;
+    for (let i = 0; i < active; i++) {
+      const s = i * 3, p = i * 6;
+      seeds[s] += vx * step;
+      seeds[s + 2] += vz * step;
+      if (seeds[s] > 1) seeds[s] -= 2; else if (seeds[s] < -1) seeds[s] += 2;
+      if (seeds[s + 2] > 1) seeds[s + 2] -= 2; else if (seeds[s + 2] < -1) seeds[s + 2] += 2;
+      const x = centre.x + seeds[s] * box, z = centre.z + seeds[s + 2] * box;
+      const lon = clamp(b.west + (x + this.wKm / 2) / t.kmPerDegLon, b.west, b.east);
+      const lat = clamp(b.north - (z + this.hKm / 2) / t.kmPerDegLat, b.south, b.north);
+      const y = this.heightKm(lon, lat) + 0.002 + seeds[s + 1] * tall;
+      pos[p] = x; pos[p + 1] = y; pos[p + 2] = z;
+      pos[p + 3] = x - vx * len; pos[p + 4] = y; pos[p + 5] = z - vz * len;
+    }
+    this.wind.geometry.attributes.position.needsUpdate = true;
+    this.wind.geometry.setDrawRange(0, active * 2);
+    this.wind.material.opacity = clamp(0.25 + env.tau * 0.07 + env.windSpeed * 0.012, 0.25, 0.85);
+  }
+
   /** Upright pins for the habitat and each waypoint; rebuilt when the plan changes. */
   #rebuildPins() {
     const THREE = window.THREE;
@@ -254,6 +314,7 @@ export class Terrain3D {
     else if (name === 'in') g.dist = clamp(g.dist * 0.7, 0.05, 9);
     else if (name === 'out') g.dist = clamp(g.dist / 0.7, 0.05, 9);
     else if (name === 'orbit') this.orbit = !this.orbit;
+    else if (name === 'wind') this.windOn = !this.windOn;
     else if (name === 'home') {
       this.orbit = false;
       // unwind to the nearest "behind the astronaut" rather than spinning back through every turn
@@ -263,9 +324,7 @@ export class Terrain3D {
     return this.orbit;
   }
 
-  #easeCamera(now) {
-    const dt = Math.min(0.1, (now - (this.lastFrame ?? now)) / 1000);
-    this.lastFrame = now;
+  #easeCamera(dt) {
     if (this.orbit) this.goal.yaw += 14 * dt; // one full turn in about 26 s
     const k = Math.min(1, dt * 7);
     for (const key of ['yaw', 'pitch', 'dist']) this.cam[key] += (this.goal[key] - this.cam[key]) * k;
@@ -381,7 +440,10 @@ export class Terrain3D {
     }
     this.trailKey = trailKey;
 
-    this.#easeCamera(now);
+    const dt = Math.min(0.1, (now - (this.lastFrame ?? now)) / 1000);
+    this.lastFrame = now;
+    this.#updateWind(dt, this.state.envNow, here);
+    this.#easeCamera(dt);
     this.#placeCamera(here, sim.heading);
     this.renderer.render(this.scene, this.camera);
 
