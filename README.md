@@ -6,7 +6,7 @@
 
 > Cartografía multicapa y navegación táctica para actividades extravehiculares (EVA) en el Cráter Jezero, Marte.
 
-## Resumen ejecutivo
+## Resumen
 
 La señal de radio entre la Tierra y Marte tarda **entre 4 y 24 minutos por sentido**. Control de misión no puede
 asistir a un astronauta en tiempo real durante una EVA: el análisis de riesgo y el ajuste de ruta tienen que
