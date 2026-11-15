@@ -82,6 +82,39 @@
       </section>
 
       <section class="panel-block">
+        <h2 class="panel-title" data-i18n="env.title">Ambiente marciano</h2>
+        <label class="field"><span data-i18n="env.preset">Escenario</span>
+          <select id="env-preset">
+            <option value="nominal" data-i18n="env.preset.nominal">Sol nominal</option>
+            <option value="dusty" data-i18n="env.preset.dusty">Temporada de polvo</option>
+            <option value="regional" data-i18n="env.preset.regional">Tormenta regional</option>
+            <option value="global" data-i18n="env.preset.global">Tormenta global</option>
+            <option value="spe" data-i18n="env.preset.spe">Evento de partículas solares</option>
+            <option value="custom" data-i18n="env.preset.custom">Personalizado</option>
+          </select>
+        </label>
+        <label class="field"><span class="field-row"><span data-i18n="env.tau">Polvo (opacidad τ)</span><b id="env-tau-val">0.4</b></span>
+          <input type="range" id="env-tau" min="0.1" max="8" step="0.1" value="0.4">
+        </label>
+        <label class="field"><span class="field-row"><span data-i18n="env.windSpeed">Viento</span><b id="env-wind-val">5 m/s</b></span>
+          <input type="range" id="env-wind" min="0" max="35" step="1" value="5">
+        </label>
+        <label class="field"><span class="field-row"><span data-i18n="env.windDir">Dirección del viento (desde)</span><b id="env-dir-val">300°</b></span>
+          <input type="range" id="env-dir" min="0" max="350" step="10" value="300">
+        </label>
+        <label class="field"><span class="field-row"><span data-i18n="env.startHour">Hora local de salida</span><b id="env-hour-val">09:00</b></span>
+          <input type="range" id="env-hour" min="5" max="18" step="0.5" value="9">
+        </label>
+        <label class="field"><span data-i18n="env.spaceWeather">Clima espacial</span>
+          <select id="env-sw">
+            <option value="quiet" data-i18n="env.sw.quiet">Sol en calma</option>
+            <option value="active" data-i18n="env.sw.active">Actividad elevada</option>
+            <option value="spe" data-i18n="env.sw.spe">Evento de partículas (SPE)</option>
+          </select>
+        </label>
+      </section>
+
+      <section class="panel-block">
         <h2 class="panel-title" data-i18n="ui.hazards">Marcadores de riesgo</h2>
         <ul id="zone-list" class="zone-list"></ul>
       </section>

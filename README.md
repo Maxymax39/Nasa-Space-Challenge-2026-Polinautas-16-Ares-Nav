@@ -73,6 +73,31 @@ malla y sustituye el arreglo `elevations` del JSON; el resto del sistema no camb
 | 4 | **Unión Canal / Llanura** | Bloques de basalto afilados | Costo de travesía × 2.5; se prefiere el corredor de roca firme |
 | 5 | **Cráter Secundario Suroeste (Belva)** | Bordes inestables y fracturas | Costo de travesía × 5 y borde bloqueado por pendiente |
 
+## Ambiente marciano (`src/core/EnvironmentModel.js`)
+
+El panel **Ambiente marciano** controla las condiciones de la EVA y el bloque **Condiciones ambientales**
+muestra los valores derivados y un estado GO / PRECAUCIÓN / NO-GO con sus motivos. Cinco escenarios
+(sol nominal, temporada de polvo, tormenta regional, tormenta global, evento de partículas solares)
+rellenan todos los controles; cualquier ajuste manual pasa a "Personalizado".
+
+| Variable | Control | Efecto en la simulación | Origen del valor |
+|---|---|---|---|
+| **Polvo y tormentas** | Opacidad τ (0.1–8) | Visibilidad (rango de Koschmieder), iluminación, bruma y estelas en el mapa; con poca visibilidad la travesía es más lenta; τ ≥ 3 es NO-GO | Valores de planificación; modelo simple |
+| **Temperatura** | Hora local de salida | Aire −83 a −23 °C y suelo −83 a 5 °C a lo largo del sol, avanzando con el tiempo de EVA; el polvo aplana el ciclo | **Medido por MEDA** (blog de NASA Science); la curva diaria es una sinusoide |
+| **Presión** | Hora local, polvo | Media ≈ 730 Pa con mareas térmicas diurna y semidiurna que crecen con el polvo; de ella sale la densidad del aire | Valor aproximado; el comportamiento sigue arXiv:2511.09743 (no revisado por pares), cuyo resumen no da cifras |
+| **Clima espacial y radiación** | Sol en calma / actividad elevada / SPE | Multiplica el campo de dosis (×1, ×1.6, ×3): cambia la dosis acumulada, el Safety Score y las celdas bloqueadas (> 0.24 mSv/h), y la ruta se recalcula | Factores hipotéticos de escenario |
+| **Viento y navegación** | Velocidad (0–35 m/s) y dirección | Flecha de viento en el mapa, marca ámbar en la brújula del HUD, componentes frontal y cruzada respecto al rumbo, presión dinámica; por encima de 18 m/s levanta polvo y sube τ | Umbrales de planificación |
+
+Qué conviene saber:
+
+- La fuerza del viento sobre el astronauta es mínima (el aire marciano es ~70 veces menos denso que el terrestre:
+  17 m/s equivalen a unos 2 m/s en la Tierra). El viento importa por el polvo que levanta, no por el empuje.
+- Si las condiciones cambian **durante** la EVA, la ruta se mantiene, se recalculan tiempos y dosis, y el HUD
+  muestra la alerta roja (tormenta, evento de partículas o viento extremo) para ordenar el regreso.
+- Los umbrales GO / NO-GO son de este proyecto, no un estándar de la NASA. Las fórmulas de depleción de O₂ y
+  del Safety Score no cambian: el ambiente entra a través de la duración y de la radiación acumulada.
+- Los valores de referencia y los escenarios están en `assets/data/environment_reference.json`.
+
 ## Modelo fisiológico (`src/core/BioSafetyCalculators.js`)
 
 Consumo diario por tripulante en el hábitat (envolvente NASA-STD-3001):
@@ -114,7 +139,8 @@ ares-nav-mars-eva/
 ├── assets/data/
 │   ├── jezero_dem_sample.json       # malla de elevación (modelada)
 │   ├── crism_minerals.json          # depósitos minerales (modelados)
-│   └── hazard_zones.json            # 5 marcadores de riesgo, hábitat, escenario RAD
+│   ├── hazard_zones.json            # 5 marcadores de riesgo, hábitat, escenario RAD
+│   └── environment_reference.json   # temperatura MEDA, presión, polvo, viento, escenarios
 ├── scripts/
 │   ├── generate-dem.ps1             # regenera la malla de elevación
 │   └── serve.ps1                    # servidor local sin dependencias (Windows)
@@ -128,6 +154,8 @@ ares-nav-mars-eva/
 │   │   ├── BioSafetyCalculators.js  # fórmulas fisiológicas
 │   │   ├── PathfindingAlgorithm.js  # A*, regreso de emergencia
 │   │   ├── TerrainModel.js          # pendiente, radiación y costos por celda
+│   │   ├── EnvironmentModel.js      # polvo, temperatura, presión, viento, clima espacial
+│   │   ├── i18n.js                  # textos en español e inglés
 │   │   └── AudioFeedback.js         # tonos sintéticos con Tone.js
 │   ├── styles/tailwind-custom.css
 │   └── main.js                      # estado, simulación y bucle de render
@@ -153,6 +181,9 @@ El audio de interfaz se sintetiza en tiempo real con Tone.js, por lo que no se i
 - [Ruta propuesta de Curiosity en el monte Sharp](https://science.nasa.gov/resource/curiositys-proposed-path-up-mount-sharp/)
 - [NASA Worldview](https://worldview.earthdata.nasa.gov/)
 - [Imágenes crudas de Mars 2020](https://mars.nasa.gov/mars2020/multimedia/raw-images/)
+- [Registros diarios de temperatura atmosférica con Perseverance (MEDA)](https://science.nasa.gov/blog/daily-records-of-atmospheric-temperature-with-perseverance/)
+- [Variabilidad estacional y diurna de la presión en Jezero (arXiv:2511.09743)](https://arxiv.org/abs/2511.09743)
+- [Perseverance lee el registro de antiguos impactos en Marte (AGU)](https://news.agu.org/press-release/nasas-perseverance-rover-reads-record-of-ancient-mars-impacts/)
 
 ## Licencia
 
