@@ -39,6 +39,14 @@ jobs:
           cp -r index.html src assets _site/ares-nav-mars-eva-main/
           cp -r web/. _site/
 
+      # The user manual (45 MB) is stored in the repository as 8 MB parts,
+      # because it exceeds the size limit of GitHub's web upload. It is
+      # rebuilt here and checked against the checksum of the original file.
+      - name: Rebuild user manual PDF
+        run: |
+          cat manual-parts/manual.pdf.part* > "_site/Manual de uso de ARES-NAV.pdf"
+          echo "5f2ae08663bf0adae87931fa3311145772d94bcb9663e829df38463c2a10660c  _site/Manual de uso de ARES-NAV.pdf" | sha256sum -c -
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
