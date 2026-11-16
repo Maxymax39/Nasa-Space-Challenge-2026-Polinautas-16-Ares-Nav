@@ -30,10 +30,14 @@ jobs:
             echo "ok: $f"
           done
 
+      # Site layout:
+      #   /                          -> general page (web/index.html) and its PDFs
+      #   /ares-nav-mars-eva-main/   -> the ARES-NAV application
       - name: Assemble site
         run: |
-          mkdir _site
-          cp -r index.html src assets _site/
+          mkdir -p _site/ares-nav-mars-eva-main
+          cp -r index.html src assets _site/ares-nav-mars-eva-main/
+          cp -r web/. _site/
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
